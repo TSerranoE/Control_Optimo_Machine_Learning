@@ -574,8 +574,13 @@ class ProblemaLQR(ControlProblem):
         Returns
         -------
         np.ndarray
-            Control óptimo ``u*(t) = -R^{-1} B^T P(t) x``, shape ``(m,)``.
+            Control óptimo ``u*(t) = -R^{-1} B^T P(t) x`` proyectado sobre el
+            conjunto admisible cuando corresponda, shape ``(m,)``.
         """
         x = np.asarray(x, dtype=float)
         P_t = self._P_interp(t).reshape(self._n, self._n)
-        return -self._R_inv @ self._B.T @ P_t @ x
+        u_libre = -self._R_inv @ self._B.T @ P_t @ x
+
+        if self._conjunto is not None:
+            return self._conjunto.proyectar(u_libre)
+        return u_libre
