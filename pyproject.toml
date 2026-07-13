@@ -1,0 +1,26 @@
+[project]
+name = "control-optimo-machine-learning"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "jupytext>=1.19.4",
+    "matplotlib>=3.11.0",
+    "numpy>=2.5.1",
+    "pytest>=9.1.1",
+    "scipy>=1.18.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["ma6914_tarea1/src", "ma6914_tarea2/src"]
+testpaths = ["ma6914_tarea1/tests", "ma6914_tarea2/tests"]
+addopts = "-ra -q"
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.jupytext]
+formats = "notebooks///py:percent"
+notebook_metadata_filter = "all"
+cell_metadata_filter = "all"

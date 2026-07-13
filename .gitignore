@@ -1,0 +1,65 @@
+# Entornos virtuales y gestores de paquetes
+.venv/
+venv/
+env/
+.env
+
+# Caché de Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Pruebas y cobertura
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Jupyter / Jupytext
+.ipynb_checkpoints/
+*.ipynb
+
+# IDEs y editores
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Configuración interna de herramientas de agentes
+.atl/
+
+# Archivos de instrucciones y enunciados del curso
+instrucciones_ia.md
+Tarea_1.md
+Tarea_2.md
+Tarea_1.pdf
+Tarea_2.pdf
+
+# Archivos de salida y resultados generados
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.pdf
+*.csv
+*.txt
