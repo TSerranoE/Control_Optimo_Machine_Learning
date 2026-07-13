@@ -9,6 +9,9 @@ Este módulo implementa las clases del Problema 2 de la tarea:
 from collections.abc import Callable
 
 import numpy as np
+from scipy.interpolate import interp1d
+from scipy.linalg import inv
+from scipy.optimize import minimize, minimize_scalar
 
 from integradores import EDOSolver
 
@@ -289,3 +292,290 @@ class ControlProblem:
         """
         x_T = np.asarray(x_T, dtype=float)
         return np.asarray(self._dphi_dx(x_T))
+
+    def evaluar_costo(
+        self,
+        u_traj: Callable | np.ndarray,
+        h: float,
+        metodo_integracion: str | None = None,
+    ) -> float:
+        """Evalúa el funcional de costo Bolza para una trayectoria de control.
+
+        Integra la dinámica con el paso ``h`` y el método indicado, evalúa el
+        costo de operación ``l`` en cada punto de la grilla mediante cuadratura
+        trapezoidal y suma el costo terminal ``phi`` en el estado final.
+
+        Parameters
+        ----------
+        u_traj : callable o np.ndarray
+            Control definido sobre la grilla temporal. Si es callable, se
+            evalúa en cada ``t_k``; si es ndarray, se usa directamente.
+        h : float
+            Paso temporal obligatorio para la integración.
+        metodo_integracion : str | None, optional
+            Método numérico a utilizar. ``None`` delega al integrador por
+            defecto (RK4).
+
+        Returns
+        -------
+        float
+            Valor aproximado del costo ``J(u)``.
+
+        Raises
+        ------
+        TypeError
+            Si no se proporciona el paso de integración ``h``.
+        """
+        sol = self._solver.solve(
+            self._f,
+            self._x0,
+            self._t_span,
+            h,
+            method=metodo_integracion,
+            u=u_traj,
+        )
+        tiempos = sol.tiempos
+        estados = sol.estados
+
+        if callable(u_traj):
+            controles = np.array([u_traj(t) for t in tiempos])
+        else:
+            controles = np.asarray(u_traj)
+
+        if controles.ndim == 1 and self._m == 1:
+            controles = controles.reshape(-1, 1)
+
+        if controles.shape[0] != len(tiempos):
+            raise ValueError(
+                "La trayectoria de control debe tener la misma longitud que la "
+                "grilla temporal obtenida de la integración."
+            )
+
+        costos = np.array(
+            [
+                float(self._l(t, x, u))
+                for t, x, u in zip(tiempos, estados, controles)
+            ]
+        )
+        integral = np.trapezoid(costos, tiempos)
+        return float(integral + self._phi(estados[-1]))
+
+    def control_optimo_puntual(
+        self, t: float, x: np.ndarray, p: np.ndarray
+    ) -> np.ndarray:
+        """Devuelve el control que minimiza el Hamiltoniano puntualmente.
+
+        Resuelve ``argmin_u H(t, x, p, u)`` respetando el conjunto admisible.
+        Para controles escalares usa ``minimize_scalar``; para dimensión mayor
+        usa ``minimize`` con ``L-BFGS-B``.
+
+        Parameters
+        ----------
+        t : float
+            Instante de tiempo.
+        x : np.ndarray
+            Estado, shape ``(n,)``.
+        p : np.ndarray
+            Costado, shape ``(n,)``.
+
+        Returns
+        -------
+        np.ndarray
+            Control óptimo puntual, shape ``(m,)``.
+        """
+        x = np.asarray(x, dtype=float)
+        p = np.asarray(p, dtype=float)
+
+        def objetivo(u: np.ndarray) -> float:
+            return self.hamiltoniano(t, x, p, u)
+
+        if self._m == 1:
+            if self._conjunto is not None and self._conjunto.es_caja():
+                bounds = self._conjunto.limites()[0]
+                resultado = minimize_scalar(
+                    objetivo, bounds=bounds, method="bounded", tol=1e-8
+                )
+            else:
+                resultado = minimize_scalar(objetivo, method="brent", tol=1e-8)
+            return np.array([float(resultado.x)])
+
+        u0 = np.zeros(self._m)
+        bounds = None
+        if self._conjunto is not None and self._conjunto.es_caja():
+            bounds = self._conjunto.limites()
+
+        resultado = minimize(
+            objetivo, u0, method="L-BFGS-B", bounds=bounds, tol=1e-6
+        )
+        return np.asarray(resultado.x, dtype=float)
+
+
+class ProblemaLQR(ControlProblem):
+    """Problema de control lineal cuadrático regulador (LQR) finito horizonte.
+
+    Construye automáticamente la dinámica lineal, el costo cuadrático y las
+    cinco derivadas parciales analíticas requeridas por ``ControlProblem``.
+    Precomputa la matriz Riccati ``P(t)`` resolviendo la ecuación diferencial
+    de Riccati hacia atrás mediante reversión temporal con ``EDOSolver``.
+
+    Parameters
+    ----------
+    A : np.ndarray
+        Matriz de estado, shape ``(n, n)``.
+    B : np.ndarray
+        Matriz de control, shape ``(n, m)``.
+    Q : np.ndarray
+        Peso del estado en el costo de operación, shape ``(n, n)``.
+    R : np.ndarray
+        Peso del control en el costo de operación, shape ``(m, m)``.
+    S : np.ndarray
+        Peso terminal, shape ``(n, n)``.
+    t_span : tuple[float, float]
+        Intervalo temporal ``(t0, tf)`` con ``tf > t0``.
+    x0 : np.ndarray
+        Estado inicial, shape ``(n,)``.
+    h : float
+        Paso de integración para la DRE de Riccati.
+    conjunto_admisible : ConjuntoAdmisible | None, optional
+        Restricciones de control. Default ``None``.
+    solver : EDOSolver | None, optional
+        Integrador de EDOs. Default ``EDOSolver()``.
+
+    Raises
+    ------
+    ValueError
+        Si las dimensiones de las matrices no son consistentes.
+    """
+
+    def __init__(
+        self,
+        A: np.ndarray,
+        B: np.ndarray,
+        Q: np.ndarray,
+        R: np.ndarray,
+        S: np.ndarray,
+        t_span: tuple[float, float],
+        x0: np.ndarray,
+        h: float,
+        conjunto_admisible: ConjuntoAdmisible | None = None,
+        solver: EDOSolver | None = None,
+    ):
+        """Inicializa el problema LQR validando matrices y precomputando P(t)."""
+        A = np.asarray(A, dtype=float)
+        B = np.asarray(B, dtype=float)
+        Q = np.asarray(Q, dtype=float)
+        R = np.asarray(R, dtype=float)
+        S = np.asarray(S, dtype=float)
+
+        n = A.shape[0]
+        if A.shape != (n, n):
+            raise ValueError("A debe tener shape (n, n).")
+        if B.ndim != 2 or B.shape[0] != n:
+            raise ValueError("B debe tener shape (n, m).")
+        m = B.shape[1]
+        if Q.shape != (n, n):
+            raise ValueError("Q debe tener shape (n, n).")
+        if R.shape != (m, m):
+            raise ValueError("R debe tener shape (m, m).")
+        if S.shape != (n, n):
+            raise ValueError("S debe tener shape (n, n).")
+
+        x0 = np.asarray(x0, dtype=float)
+        if x0.shape != (n,):
+            raise ValueError("x0 debe tener shape (n,).")
+
+        f = lambda t, x, u: A @ np.asarray(x, dtype=float) + B @ np.asarray(
+            u, dtype=float
+        )
+        l = lambda t, x, u: 0.5 * float(
+            np.asarray(x, dtype=float) @ Q @ np.asarray(x, dtype=float)
+            + np.asarray(u, dtype=float) @ R @ np.asarray(u, dtype=float)
+        )
+        phi = lambda x: 0.5 * float(
+            np.asarray(x, dtype=float) @ S @ np.asarray(x, dtype=float)
+        )
+
+        df_dx = lambda t, x, u: A
+        df_du = lambda t, x, u: B
+        dl_dx = lambda t, x, u: Q @ np.asarray(x, dtype=float)
+        dl_du = lambda t, x, u: R @ np.asarray(u, dtype=float)
+        dphi_dx = lambda x: S @ np.asarray(x, dtype=float)
+
+        super().__init__(
+            f=f,
+            l=l,
+            phi=phi,
+            df_dx=df_dx,
+            df_du=df_du,
+            dl_dx=dl_dx,
+            dl_du=dl_du,
+            dphi_dx=dphi_dx,
+            t_span=t_span,
+            x0=x0,
+            m=m,
+            conjunto_admisible=conjunto_admisible,
+            solver=solver,
+        )
+
+        self._A = A
+        self._B = B
+        self._Q = Q
+        self._R = R
+        self._S = S
+        self._h = h
+        self._R_inv = inv(R)
+        self._precomputar_riccati(h)
+
+    def _precomputar_riccati(self, h: float) -> None:
+        """Resuelve la DRE hacia atrás mediante reversión temporal.
+
+        Integra ``dP/dτ = A^T P + P A - P B R^{-1} B^T P + Q`` en ``τ ∈ [0, T]``
+        con ``P(τ=0) = S`` y construye un interpolador ``P(t)`` para ``t ∈ [t0, tf]``.
+        """
+        n = self._n
+
+        def riccati_ode(tau: float, P_flat: np.ndarray, u: np.ndarray | None = None) -> np.ndarray:
+            P = P_flat.reshape(n, n)
+            dP = (
+                self._A.T @ P
+                + P @ self._A
+                - P @ self._B @ self._R_inv @ self._B.T @ P
+                + self._Q
+            )
+            return dP.flatten()
+
+        P_T = self._S.flatten()
+        sol = self._solver.solve(riccati_ode, P_T, (0.0, self._T), h)
+
+        # τ = T - t  ⇒  t = T - τ. Invertimos para obtener P(t) en tiempo directo.
+        self._P_tiempos = self._T - sol.tiempos[::-1]
+        self._P_estados = sol.estados[::-1]
+        self._P_interp = interp1d(
+            self._P_tiempos, self._P_estados, axis=0, kind="linear"
+        )
+
+    def control_optimo_puntual(
+        self, t: float, x: np.ndarray, p: np.ndarray
+    ) -> np.ndarray:
+        """Devuelve el control óptimo analítico vía Riccati.
+
+        El argumento ``p`` no se utiliza porque la solución Riccati ya incorpora
+        el costado a través de ``P(t)``.
+
+        Parameters
+        ----------
+        t : float
+            Instante de tiempo.
+        x : np.ndarray
+            Estado, shape ``(n,)``.
+        p : np.ndarray
+            Costado (no utilizado en la fórmula Riccati).
+
+        Returns
+        -------
+        np.ndarray
+            Control óptimo ``u*(t) = -R^{-1} B^T P(t) x``, shape ``(m,)``.
+        """
+        x = np.asarray(x, dtype=float)
+        P_t = self._P_interp(t).reshape(self._n, self._n)
+        return -self._R_inv @ self._B.T @ P_t @ x
