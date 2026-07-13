@@ -29,3 +29,16 @@ formats = [
 ]
 notebook_metadata_filter = "all"
 cell_metadata_filter = "all"
+
+[tool.coverage.run]
+source = ["tarea1/src", "tarea2/src"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=7.1.0",
+]
