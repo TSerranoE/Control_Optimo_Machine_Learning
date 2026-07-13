@@ -65,3 +65,25 @@ class TestProblemaLQR:
 
         assert u_opt.shape == (1,)
         assert u_opt[0] == pytest.approx(esperado, abs=1e-4)
+
+    def test_lqr_control_optimo_projects_box(self):
+        """El control óptimo analítico debe proyectarse sobre la caja."""
+        from problemas_control import ConjuntoAdmisible
+
+        problema = ProblemaLQR(
+            A=np.array([[1.0]]),
+            B=np.array([[1.0]]),
+            Q=np.array([[1.0]]),
+            R=np.array([[1.0]]),
+            S=np.array([[1.0]]),
+            t_span=(0.0, 1.0),
+            x0=np.array([1.0]),
+            h=1e-4,
+            conjunto_admisible=ConjuntoAdmisible(limites=[(-1.0, 1.0)]),
+        )
+
+        # x grande genera un control libre fuera de [-1, 1]
+        x = np.array([10.0])
+        u_opt = problema.control_optimo_puntual(0.5, x, np.array([0.0]))
+
+        assert u_opt[0] == pytest.approx(-1.0, abs=1e-8)
