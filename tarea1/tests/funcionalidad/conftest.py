@@ -3,6 +3,8 @@
 import numpy as np
 import pytest
 
+from problemas_control import ConjuntoAdmisible, ControlProblem
+
 
 @pytest.fixture
 def campo_lineal():
@@ -14,3 +16,70 @@ def campo_lineal():
         Función f(t, x, u) que retorna -x como ndarray.
     """
     return lambda t, x, u: -np.asarray(x)
+
+
+@pytest.fixture
+def scalar_lqr_matrices():
+    """Matrices escalares para un LQR con solución conocida.
+
+    Returns
+    -------
+    tuple
+        ``(A, B, Q, R, S)`` como escalares (todos iguales a 1).
+    """
+    return (1.0, 1.0, 1.0, 1.0, 1.0)
+
+
+@pytest.fixture
+def box_conjunto():
+    """Conjunto admisible tipo caja con límites ``(-1, 1)``.
+
+    Returns
+    -------
+    ConjuntoAdmisible
+        Conjunto de dimensión 1 acotado.
+    """
+    return ConjuntoAdmisible(limites=((-1.0, 1.0),))
+
+
+@pytest.fixture
+def unrestricted_conjunto():
+    """Conjunto admisible irrestricto.
+
+    Returns
+    -------
+    ConjuntoAdmisible
+        Conjunto sin límites.
+    """
+    return ConjuntoAdmisible(limites=None)
+
+
+@pytest.fixture
+def simple_control_problem(unrestricted_conjunto):
+    """Problema de control escalar sencillo para los tests del esqueleto.
+
+    La dinámica es ``f(t, x, u) = -x + u``, el costo de operación
+    ``l(t, x, u) = x^2 + u^2`` y el costo terminal ``phi(x) = x^2``.
+
+    Parameters
+    ----------
+    unrestricted_conjunto : ConjuntoAdmisible
+        Conjunto irrestricto inyectado por fixture.
+
+    Returns
+    -------
+    ControlProblem
+        Instancia con ``T=1.0``, ``x0=[1.0]`` y ``m=1``.
+    """
+    f = lambda t, x, u: -np.asarray(x) + np.asarray(u)
+    l = lambda t, x, u: float(np.dot(x, x) + np.dot(u, u))
+    phi = lambda x: float(np.dot(x, x))
+    return ControlProblem(
+        f=f,
+        l=l,
+        phi=phi,
+        T=1.0,
+        x0=np.array([1.0]),
+        m=1,
+        conjunto_admisible=unrestricted_conjunto,
+    )
