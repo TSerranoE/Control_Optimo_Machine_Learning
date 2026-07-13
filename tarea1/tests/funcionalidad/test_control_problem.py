@@ -174,3 +174,87 @@ def _derivadas_simples():
         "dl_du": lambda t, x, u: np.array([0.0]),
         "dphi_dx": lambda x: 2.0 * np.asarray(x),
     }
+
+
+class TestControlProblemCostoYOptimo:
+    """Pruebas de ``evaluar_costo`` y ``control_optimo_puntual``."""
+
+    def test_evaluar_costo_requires_h(self, simple_control_problem):
+        """``evaluar_costo`` debe exigir el paso de integración ``h``."""
+        with pytest.raises(ValueError, match="h"):
+            simple_control_problem.evaluar_costo(lambda t: np.zeros(1))
+
+    def test_evaluar_costo_callable(self, simple_control_problem):
+        """Evaluar costo con un control callable y método RK4."""
+        costo = simple_control_problem.evaluar_costo(
+            lambda t: np.zeros(1), h=0.001, metodo_integracion="rk4"
+        )
+
+        # x(t) = exp(-t), costo = (1 + exp(-2)) / 2
+        esperado = 0.5 * (1.0 + np.exp(-2.0))
+        assert costo == pytest.approx(esperado, rel=1e-5, abs=1e-6)
+
+    def test_evaluar_costo_ndarray(self, simple_control_problem):
+        """Evaluar costo con un control arreglado y método Euler progresivo."""
+        h = 0.01
+        N = int(simple_control_problem._T / h) + 1
+        u_traj = np.zeros((N, 1))
+
+        costo = simple_control_problem.evaluar_costo(
+            u_traj, h=h, metodo_integracion="euler_progresivo"
+        )
+
+        esperado = 0.5 * (1.0 + np.exp(-2.0))
+        assert costo == pytest.approx(esperado, rel=1e-2, abs=1e-3)
+
+    def test_evaluar_costo_callable_vs_ndarray_equivalence(self, simple_control_problem):
+        """Entradas equivalentes deben producir el mismo costo numérico."""
+        h = 0.01
+        N = int(simple_control_problem._T / h) + 1
+
+        costo_callable = simple_control_problem.evaluar_costo(
+            lambda t: np.zeros(1), h=h, metodo_integracion="euler_progresivo"
+        )
+        costo_ndarray = simple_control_problem.evaluar_costo(
+            np.zeros((N, 1)), h=h, metodo_integracion="euler_progresivo"
+        )
+
+        assert costo_callable == pytest.approx(costo_ndarray, abs=1e-10)
+
+    def test_control_optimo_1d_unrestricted(self, simple_control_problem):
+        """Para m=1 irrestricto, el óptimo minimiza el Hamiltoniano."""
+        t = 0.0
+        x = np.array([1.0])
+        p = np.array([2.0])
+
+        u_opt = simple_control_problem.control_optimo_puntual(t, x, p)
+
+        assert isinstance(u_opt, np.ndarray)
+        assert u_opt.shape == (1,)
+        # H = x^2 + u^2 + p*(-x + u) => u* = -p / 2
+        assert u_opt[0] == pytest.approx(-1.0, abs=1e-6)
+
+    def test_control_optimo_1d_box(self, box_conjunto):
+        """Para m=1 con caja, la solución respeta la proyección."""
+        f = lambda t, x, u: -np.asarray(x) + np.asarray(u)
+        l = lambda t, x, u: float(np.dot(x, x) + np.dot(u, u))
+        phi = lambda x: float(np.dot(x, x))
+        derivadas = _derivadas_simples()
+        derivadas["df_du"] = lambda t, x, u: np.array([[1.0]])
+
+        problema = ControlProblem(
+            f=f,
+            l=l,
+            phi=phi,
+            t_span=(0.0, 1.0),
+            x0=np.array([1.0]),
+            m=1,
+            conjunto_admisible=box_conjunto,
+            **derivadas,
+        )
+
+        u_opt = problema.control_optimo_puntual(0.0, np.array([1.0]), np.array([4.0]))
+
+        assert u_opt.shape == (1,)
+        # Sin restricción u* = -p/2 = -2; proyectado a -1
+        assert u_opt[0] == pytest.approx(-1.0, abs=1e-6)
