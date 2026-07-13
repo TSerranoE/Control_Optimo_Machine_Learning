@@ -4,6 +4,8 @@ Verifican la API pública de ``EDOSolver`` y el contenedor ``EDOSolution``,
 junto con las reglas de validación y el manejo de pasos temporales.
 """
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -283,6 +285,71 @@ class TestHeun:
         assert len(solucion.intermedios) == len(solucion.tiempos) - 1
         assert "z" in solucion.intermedios[0]
         assert solucion.intermedios[0]["z"].shape == condicion_inicial.shape
+
+
+class TestEulerImplicito:
+    """Suite para el método de Euler implícito."""
+
+    def test_euler_implicito_convergencia(self, campo_lineal):
+        """Euler implícito converge en el problema lineal decreciente."""
+        condicion_inicial = np.array([1.0])
+        intervalo = (0.0, 1.0)
+        paso = 0.01
+
+        resolutor = EDOSolver()
+        solucion = resolutor.solve(
+            campo_lineal,
+            condicion_inicial,
+            intervalo,
+            paso,
+            method="euler_implicito",
+        )
+
+        valor_final_esperado = np.exp(-1.0)
+        assert abs(solucion.estados[-1, 0] - valor_final_esperado) < 5e-3
+
+    def test_argumentos_fsolve_custom(self, campo_lineal):
+        """Los argumentos custom de fsolve se propagan sin errores."""
+        condicion_inicial = np.array([1.0])
+        intervalo = (0.0, 1.0)
+        paso = 0.1
+
+        resolutor = EDOSolver()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            solucion = resolutor.solve(
+                campo_lineal,
+                condicion_inicial,
+                intervalo,
+                paso,
+                method="euler_implicito",
+                argumentos_fsolve={"xtol": 1e-12},
+            )
+
+        valor_final_esperado = np.exp(-1.0)
+        assert abs(solucion.estados[-1, 0] - valor_final_esperado) < 5e-2
+
+
+class TestCrankNicolson:
+    """Suite para el método de Crank-Nicolson."""
+
+    def test_crank_nicolson_convergencia(self, campo_lineal):
+        """Crank-Nicolson converge con orden 2 en el problema lineal."""
+        condicion_inicial = np.array([1.0])
+        intervalo = (0.0, 1.0)
+        paso = 0.01
+
+        resolutor = EDOSolver()
+        solucion = resolutor.solve(
+            campo_lineal,
+            condicion_inicial,
+            intervalo,
+            paso,
+            method="crank_nicolson",
+        )
+
+        valor_final_esperado = np.exp(-1.0)
+        assert abs(solucion.estados[-1, 0] - valor_final_esperado) < 1e-5
 
 
 class TestRK4:

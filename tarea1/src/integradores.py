@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
+from scipy.optimize import fsolve
 
 
 @dataclass
@@ -84,8 +85,16 @@ class EDOSolver:
         self._validar_entradas(f, x0, t_span, h, method, u, argumentos_fsolve)
         tiempos, pasos = self._construir_grilla(t_span, h)
         control = self._preprocesar_control(u, tiempos, method)
+        argumentos_fsolve = argumentos_fsolve or {"xtol": 1e-8}
         estados, intermedios = self._resolver_integracion(
-            f, x0, tiempos, pasos, control, method, guardar_intermedios
+            f,
+            x0,
+            tiempos,
+            pasos,
+            control,
+            method,
+            guardar_intermedios,
+            argumentos_fsolve,
         )
         return EDOSolution(
             tiempos=tiempos,
@@ -210,19 +219,18 @@ class EDOSolver:
         control: Callable | np.ndarray | None,
         method: str,
         guardar_intermedios: bool,
+        argumentos_fsolve: dict,
     ) -> tuple[np.ndarray, list[dict] | None]:
         """Despacha al método numérico solicitado."""
         metodos_disponibles = {
             "euler": self._euler,
+            "euler_implicito": self._euler_implicito,
             "heun": self._heun,
+            "crank_nicolson": self._crank_nicolson,
             "rk4": self._rk4,
         }
-        if method not in metodos_disponibles:
-            raise ValueError(
-                f"Método '{method}' aún no implementado. Disponibles: {self.METODOS}"
-            )
         estados, intermedios = metodos_disponibles[method](
-            f, x0, tiempos, pasos, control, guardar_intermedios
+            f, x0, tiempos, pasos, control, guardar_intermedios, argumentos_fsolve
         )
         return estados, intermedios if guardar_intermedios else None
 
@@ -234,6 +242,7 @@ class EDOSolver:
         pasos: np.ndarray,
         control: np.ndarray | None,
         guardar_intermedios: bool,
+        argumentos_fsolve: dict,
     ) -> tuple[np.ndarray, list[dict]]:
         """Euler progresivo: x_{k+1} = x_k + h_k * f(t_k, x_k, u_k)."""
         num_pasos = len(pasos)
@@ -251,6 +260,97 @@ class EDOSolver:
 
         return estados, intermedios
 
+    def _resolver_implicito(
+        self,
+        residual: Callable[[np.ndarray], np.ndarray],
+        guess_inicial: np.ndarray,
+        argumentos_fsolve: dict,
+    ) -> np.ndarray:
+        """Resuelve un sistema no lineal con scipy.optimize.fsolve.
+
+        Los métodos implícitos definen un residual g(z) que debe anularse en
+        cada paso temporal; este helper centraliza la llamada a fsolve.
+        """
+        return fsolve(residual, x0=guess_inicial, **argumentos_fsolve)
+
+    def _euler_implicito(
+        self,
+        f: Callable,
+        x0: np.ndarray,
+        tiempos: np.ndarray,
+        pasos: np.ndarray,
+        control: np.ndarray | None,
+        guardar_intermedios: bool,
+        argumentos_fsolve: dict,
+    ) -> tuple[np.ndarray, list[dict]]:
+        """Euler implícito: resuelve x_{k+1} con fsolve.
+
+        El residual es g(z) = z - x_k - h_k * f(t_{k+1}, z, u_{k+1}).
+        """
+        num_pasos = len(pasos)
+        estados = np.empty((num_pasos + 1, x0.size), dtype=float)
+        estados[0] = x0
+        intermedios = []
+
+        for k in range(num_pasos):
+            t_siguiente = tiempos[k + 1]
+            x_k = estados[k]
+            h_k = pasos[k]
+            u_siguiente = control[k + 1] if control is not None else None
+
+            def residual(z: np.ndarray) -> np.ndarray:
+                return z - x_k - h_k * np.asarray(f(t_siguiente, z, u_siguiente))
+
+            estados[k + 1] = self._resolver_implicito(
+                residual, x_k, argumentos_fsolve
+            )
+            intermedios.append({})
+
+        return estados, intermedios
+
+    def _crank_nicolson(
+        self,
+        f: Callable,
+        x0: np.ndarray,
+        tiempos: np.ndarray,
+        pasos: np.ndarray,
+        control: np.ndarray | None,
+        guardar_intermedios: bool,
+        argumentos_fsolve: dict,
+    ) -> tuple[np.ndarray, list[dict]]:
+        """Crank-Nicolson: promedio de pendientes explícita e implícita.
+
+        El residual es g(z) = z - x_k - (h_k/2) * [f(t_k, x_k, u_k) +
+                                                   f(t_{k+1}, z, u_{k+1})].
+        """
+        num_pasos = len(pasos)
+        estados = np.empty((num_pasos + 1, x0.size), dtype=float)
+        estados[0] = x0
+        intermedios = []
+
+        for k in range(num_pasos):
+            t_k = tiempos[k]
+            t_siguiente = tiempos[k + 1]
+            x_k = estados[k]
+            h_k = pasos[k]
+            u_k = control[k] if control is not None else None
+            u_siguiente = control[k + 1] if control is not None else None
+
+            pendiente_inicial = np.asarray(f(t_k, x_k, u_k))
+
+            def residual(z: np.ndarray) -> np.ndarray:
+                pendiente_final = np.asarray(f(t_siguiente, z, u_siguiente))
+                return z - x_k - (h_k / 2.0) * (
+                    pendiente_inicial + pendiente_final
+                )
+
+            estados[k + 1] = self._resolver_implicito(
+                residual, x_k, argumentos_fsolve
+            )
+            intermedios.append({})
+
+        return estados, intermedios
+
     def _heun(
         self,
         f: Callable,
@@ -259,6 +359,7 @@ class EDOSolver:
         pasos: np.ndarray,
         control: np.ndarray | None,
         guardar_intermedios: bool,
+        argumentos_fsolve: dict,
     ) -> tuple[np.ndarray, list[dict]]:
         """Heun: predictor-corrector explícito de orden 2.
 
@@ -298,6 +399,7 @@ class EDOSolver:
         pasos: np.ndarray,
         control: Callable | None,
         guardar_intermedios: bool,
+        argumentos_fsolve: dict,
     ) -> tuple[np.ndarray, list[dict]]:
         """Runge-Kutta explícito de orden 4.
 
