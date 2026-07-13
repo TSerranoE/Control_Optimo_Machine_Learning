@@ -6,7 +6,7 @@ del curso MA6914 Seminario Avanzado I.
 ## Estructura del proyecto
 
 ```text
-ma6914_tarea1/
+tarea1/
 ├── src/
 │   ├── integradores.py         # Clases EDOSolver y EDOSolution
 │   ├── problemas_control.py    # Clase ControlProblem
@@ -47,7 +47,7 @@ Los notebooks se mantienen en formato dual:
 - `.py` con formato `py:percent` (texto plano, ideal para diff y revisiones).
 - `.ipynb` (formato nativo de Jupyter, listo para ejecutar en un entorno interactivo).
 
-Ambos archivos se versionan. La configuración en `pyproject.toml` define el emparejamiento para las carpetas `ma6914_tarea1/notebooks/` y `ma6914_tarea2/notebooks/`.
+Ambos archivos se versionan. La configuración en `pyproject.toml` define el emparejamiento para las carpetas `tarea1/notebooks/` y `tarea2/notebooks/`.
 
 ### Sincronización manual
 

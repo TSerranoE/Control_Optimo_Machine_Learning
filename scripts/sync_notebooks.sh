@@ -7,7 +7,7 @@ set -euo pipefail
 
 echo "[sync-notebooks] Sincronizando notebooks emparejados..."
 
-uv run jupytext --sync ma6914_tarea1/notebooks/*.py
-uv run jupytext --sync ma6914_tarea2/notebooks/*.py
+uv run jupytext --sync tarea1/notebooks/*.py
+uv run jupytext --sync tarea2/notebooks/*.py
 
 echo "[sync-notebooks] Sincronización completada."

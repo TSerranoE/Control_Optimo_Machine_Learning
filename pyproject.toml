@@ -13,8 +13,8 @@ dependencies = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["ma6914_tarea1/src", "ma6914_tarea2/src"]
-testpaths = ["ma6914_tarea1/tests", "ma6914_tarea2/tests"]
+pythonpath = ["tarea1/src", "tarea2/src"]
+testpaths = ["tarea1/tests", "tarea2/tests"]
 addopts = "-ra -q"
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
@@ -22,10 +22,10 @@ python_functions = ["test_*"]
 
 [tool.jupytext]
 formats = [
-    "ma6914_tarea1/notebooks///ipynb",
-    "ma6914_tarea1/notebooks///py:percent",
-    "ma6914_tarea2/notebooks///ipynb",
-    "ma6914_tarea2/notebooks///py:percent",
+    "tarea1/notebooks///ipynb",
+    "tarea1/notebooks///py:percent",
+    "tarea2/notebooks///ipynb",
+    "tarea2/notebooks///py:percent",
 ]
 notebook_metadata_filter = "all"
 cell_metadata_filter = "all"

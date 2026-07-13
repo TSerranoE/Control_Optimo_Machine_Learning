@@ -2,7 +2,7 @@
 # jupyter:
 #   jupytext:
 #     cell_metadata_filter: all
-#     formats: ma6914_tarea2/notebooks///ipynb,ma6914_tarea2/notebooks///py:percent
+#     formats: tarea2/notebooks///ipynb,tarea2/notebooks///py:percent
 #     notebook_metadata_filter: all
 #     text_representation:
 #       extension: .py
