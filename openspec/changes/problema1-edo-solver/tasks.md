@@ -40,13 +40,13 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Métodos Explícitos + Control Dual + Intermedios
 
-- [ ] 2.1 **RED**: Escribir parametrizado de control dual (R4): 4 combos `method × u_type` (RK4+callable, RK4+arreglo→ValueError, Euler+callable→UserWarning, Euler+arreglo→OK). Debe fallar.
-- [ ] 2.2 **GREEN**: Implementar `_preprocesar_control()`: RK4 exige callable (ValueError si ndarray), otros pre-evalúan callable con `UserWarning`, ndarray se valida contra `len(tiempos)`.
-- [ ] 2.3 **RED**: Escribir `test_heun_solucion_analitica` y `test_heun_intermedios`. Verificar precisión y almacenamiento de `z`. Deben fallar.
-- [ ] 2.4 **GREEN**: Implementar `_heun()`: predictor `z = x_k + h_k * f(t_k, x_k, u_k)`, corrector con promedio de `f`. Almacenar `z` si `guardar_intermedios=True`.
-- [ ] 2.5 **RED**: Escribir `test_rk4_alta_precision` (R1) y `test_rk4_intermedios`. Verificar `|x[-1] - exp(-1)| < 1e-10` y `k1..k4`. Deben fallar.
-- [ ] 2.6 **GREEN**: Implementar `_rk4()`: 4 etapas `k1..k4`, evaluar `u(t_k)`, `u(t_k+h/2)`, `u(t_k+h)`. Almacenar `k1..k4` si `guardar_intermedios=True`.
-- [ ] 2.7 **REFACTOR**: Unificar patrón de intermediates: cada método retorna `(estados, intermedios_paso)` tuple. Centralizar ensamblaje en `_resolver_integracion()`.
+- [x] 2.1 **RED**: Escribir parametrizado de control dual (R4): 4 combos `method × u_type` (RK4+callable, RK4+arreglo→ValueError, Euler+callable→UserWarning, Euler+arreglo→OK). Debe fallar.
+- [x] 2.2 **GREEN**: Implementar `_preprocesar_control()`: RK4 exige callable (ValueError si ndarray), otros pre-evalúan callable con `UserWarning`, ndarray se valida contra `len(tiempos)`.
+- [x] 2.3 **RED**: Escribir `test_heun_solucion_analitica` y `test_heun_intermedios`. Verificar precisión y almacenamiento de `z`. Deben fallar.
+- [x] 2.4 **GREEN**: Implementar `_heun()`: predictor `z = x_k + h_k * f(t_k, x_k, u_k)`, corrector con promedio de `f`. Almacenar `z` si `guardar_intermedios=True`.
+- [x] 2.5 **RED**: Escribir `test_rk4_alta_precision` (R1) y `test_rk4_intermedios`. Verificar `|x[-1] - exp(-1)| < 1e-10` y `k1..k4`. Deben fallar.
+- [x] 2.6 **GREEN**: Implementar `_rk4()`: 4 etapas `k1..k4`, evaluar `u(t_k)`, `u(t_k+h/2)`, `u(t_k+h)`. Almacenar `k1..k4` si `guardar_intermedios=True`.
+- [x] 2.7 **REFACTOR**: Unificar patrón de intermediates: cada método retorna `(estados, intermedios_paso)` tuple. Centralizar ensamblaje en `_resolver_integracion()`.
 
 ## Phase 3: Métodos Implícitos
 
