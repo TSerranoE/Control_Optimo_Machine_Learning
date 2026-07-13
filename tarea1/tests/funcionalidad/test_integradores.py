@@ -16,7 +16,7 @@ class TestValidacion:
     """Suite para las reglas de validación de entradas."""
 
     @pytest.mark.parametrize(
-        "condicion_inicial, intervalo, paso, metodo, mensaje_esperado",
+        "condicion_inicial, intervalo, paso, metodo, mensaje_esperado, error_esperado",
         [
             (
                 "foo",
@@ -24,6 +24,15 @@ class TestValidacion:
                 0.1,
                 "euler_progresivo",
                 "x0 debe ser un ndarray numérico 1D",
+                ValueError,
+            ),
+            (
+                np.array([]),
+                (0.0, 1.0),
+                0.1,
+                "euler_progresivo",
+                "x0 debe ser un ndarray numérico 1D",
+                ValueError,
             ),
             (
                 np.array([1.0]),
@@ -31,6 +40,7 @@ class TestValidacion:
                 0.1,
                 "euler_progresivo",
                 "t_span debe tener >= 2 puntos ordenados",
+                ValueError,
             ),
             (
                 np.array([1.0]),
@@ -38,6 +48,7 @@ class TestValidacion:
                 0.1,
                 "euler_progresivo",
                 "t_span debe tener >= 2 puntos ordenados",
+                ValueError,
             ),
             (
                 np.array([1.0]),
@@ -45,6 +56,7 @@ class TestValidacion:
                 0.0,
                 "euler_progresivo",
                 "h debe ser positivo y consistente con t_span",
+                ValueError,
             ),
             (
                 np.array([1.0]),
@@ -52,6 +64,7 @@ class TestValidacion:
                 -0.1,
                 "euler_progresivo",
                 "h debe ser positivo y consistente con t_span",
+                ValueError,
             ),
             (
                 np.array([1.0]),
@@ -59,6 +72,7 @@ class TestValidacion:
                 np.array([0.1]),
                 "euler_progresivo",
                 "h debe ser positivo y consistente con t_span",
+                ValueError,
             ),
         ],
     )
@@ -70,16 +84,30 @@ class TestValidacion:
         paso,
         metodo,
         mensaje_esperado,
+        error_esperado,
     ):
-        """Las entradas inválidas producen ValueError con mensaje descriptivo."""
+        """Las entradas inválidas producen errores descriptivos."""
         resolutor = EDOSolver()
-        with pytest.raises(ValueError, match=mensaje_esperado):
+        with pytest.raises(error_esperado, match=mensaje_esperado):
             resolutor.solve(
                 campo_lineal,
                 condicion_inicial,
                 intervalo,
                 paso,
                 method=metodo,
+            )
+
+    def test_argumentos_fsolve_no_dict(self, campo_lineal):
+        """argumentos_fsolve debe ser un diccionario o None."""
+        resolutor = EDOSolver()
+        with pytest.raises(TypeError, match="debe ser un diccionario"):
+            resolutor.solve(
+                campo_lineal,
+                np.array([1.0]),
+                (0.0, 1.0),
+                0.1,
+                method="euler_progresivo",
+                argumentos_fsolve="no_es_dict",
             )
 
 
@@ -130,6 +158,46 @@ class TestGrillaTemporal:
                 np.array([0.1, -0.05, 0.1]),
                 method="euler_progresivo",
             )
+
+    def test_advertencia_redondeo_paso(self, campo_lineal):
+        """Si el paso no divide exactamente el intervalo se advierte al usuario."""
+        condicion_inicial = np.array([1.0])
+        intervalo = (0.0, 1.0)
+        paso = 0.3
+
+        resolutor = EDOSolver()
+        with pytest.warns(UserWarning, match="paso efectivo"):
+            solucion = resolutor.solve(
+                campo_lineal,
+                condicion_inicial,
+                intervalo,
+                paso,
+                method="euler_progresivo",
+            )
+
+        assert solucion.tiempos[-1] == pytest.approx(intervalo[-1])
+
+    def test_paso_mayor_que_intervalo(self, campo_lineal):
+        """Un paso mayor que el intervalo fuerza al menos un paso efectivo."""
+        import warnings
+
+        condicion_inicial = np.array([1.0])
+        intervalo = (0.0, 1.0)
+        paso = 3.0
+
+        resolutor = EDOSolver()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            solucion = resolutor.solve(
+                campo_lineal,
+                condicion_inicial,
+                intervalo,
+                paso,
+                method="euler_progresivo",
+            )
+
+        assert len(solucion.tiempos) == 2
+        assert solucion.tiempos[-1] == pytest.approx(intervalo[-1])
 
 
 class TestEulerProgresivo:
@@ -242,6 +310,23 @@ class TestControlDual:
                 u=control,
             )
             assert solucion.estados.shape[0] == 11
+
+    def test_control_arreglo_longitud_incorrecta(self, campo_lineal):
+        """Un arreglo de control debe coincidir con la grilla temporal."""
+        resolutor = EDOSolver()
+        condicion_inicial = np.array([1.0])
+        intervalo = (0.0, 1.0)
+        paso = 0.1
+
+        with pytest.raises(ValueError, match="misma longitud"):
+            resolutor.solve(
+                campo_lineal,
+                condicion_inicial,
+                intervalo,
+                paso,
+                method="euler_progresivo",
+                u=np.zeros(5),
+            )
 
 
 class TestHeun:
