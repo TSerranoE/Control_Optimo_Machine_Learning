@@ -6,10 +6,9 @@ Este módulo implementa las clases del Problema 2 de la tarea:
 ``ProblemaLQR`` como subclase con solución analítica vía Riccati.
 """
 
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
-from scipy.optimize import approx_fprime
 
 from integradores import EDOSolver
 
@@ -99,9 +98,9 @@ class ControlProblem:
     """Formulación general de un problema de control óptimo tipo Bolza.
 
     La dinámica está dada por ``dx/dt = f(t, x, u)``, el costo de operación por
-    ``l(t, x, u)`` y el costo terminal por ``phi(x)``. Las derivadas parciales
-    de ``f``, ``l`` y ``phi`` pueden proveerse de forma analítica; de lo
-    contrario, se aproximan por diferencias finitas.
+    ``l(t, x, u)`` y el costo terminal por ``phi(x)``. Las cinco derivadas
+    parciales requeridas se proveen de forma analítica en el constructor; no
+    existe fallback por diferencias finitas.
 
     Parameters
     ----------
@@ -111,8 +110,18 @@ class ControlProblem:
         Costo de operación ``l(t, x, u) -> float``.
     phi : callable
         Costo terminal ``phi(x) -> float``.
-    T : float
-        Horizonte temporal. Debe ser estrictamente positivo.
+    df_dx : callable
+        Jacobiano ``∂f/∂x(t, x, u) -> ndarray`` de shape ``(n, n)``.
+    df_du : callable
+        Jacobiano ``∂f/∂u(t, x, u) -> ndarray`` de shape ``(n, m)``.
+    dl_dx : callable
+        Gradiente ``∂l/∂x(t, x, u) -> ndarray`` de shape ``(n,)``.
+    dl_du : callable
+        Gradiente ``∂l/∂u(t, x, u) -> ndarray`` de shape ``(m,)``.
+    dphi_dx : callable
+        Gradiente ``∂phi/∂x(x) -> ndarray`` de shape ``(n,)``.
+    t_span : tuple[float, float]
+        Intervalo temporal ``(t0, tf)`` con ``tf > t0``.
     x0 : np.ndarray
         Estado inicial, shape ``(n,)``.
     m : int
@@ -121,18 +130,15 @@ class ControlProblem:
         Restricciones de control. Default ``None`` (irrestricto).
     solver : EDOSolver | None, optional
         Integrador de EDOs inyectado. Default ``EDOSolver()``.
-    df_dx : callable | None, optional
-        Jacobiano ``∂f/∂x`` con shape ``(n, n)``.
-    dl_dx : callable | None, optional
-        Gradiente ``∂l/∂x`` con shape ``(n,)``.
-    dphi_dx : callable | None, optional
-        Gradiente ``∂phi/∂x`` con shape ``(n,)``.
 
     Raises
     ------
     ValueError
-        Si ``T <= 0``, ``m`` no es entero positivo, ``x0`` no es un ndarray 1D,
+        Si ``t_span`` no tiene dos elementos, ``t_span[1] <= t_span[0]``,
+        ``m`` no es entero positivo, ``x0`` no es un ndarray 1D,
         o la dinámica no devuelve la dimensión esperada.
+    TypeError
+        Si alguna de las cinco derivadas no es callable.
     """
 
     def __init__(
@@ -140,36 +146,65 @@ class ControlProblem:
         f: Callable,
         l: Callable,
         phi: Callable,
-        T: float,
+        df_dx: Callable,
+        df_du: Callable,
+        dl_dx: Callable,
+        dl_du: Callable,
+        dphi_dx: Callable,
+        t_span: tuple[float, float],
         x0: np.ndarray,
         m: int,
         conjunto_admisible: ConjuntoAdmisible | None = None,
         solver: EDOSolver | None = None,
-        df_dx: Callable | None = None,
-        dl_dx: Callable | None = None,
-        dphi_dx: Callable | None = None,
     ):
         """Inicializa el problema de control validando las entradas."""
         if not isinstance(x0, np.ndarray) or x0.ndim != 1 or x0.size == 0:
             raise ValueError("x0 debe ser un ndarray numérico 1D no vacío.")
 
-        if T <= 0:
-            raise ValueError("El horizonte temporal T debe ser estrictamente positivo.")
+        try:
+            t0, tf = float(t_span[0]), float(t_span[1])
+        except Exception as exc:
+            raise ValueError(
+                "t_span debe ser una tupla de dos valores numéricos (t0, tf)."
+            ) from exc
+
+        if len(t_span) != 2 or tf <= t0:
+            raise ValueError(
+                "t_span debe tener dos elementos con el tiempo final "
+                "estrictamente mayor al inicial."
+            )
 
         if not isinstance(m, int) or m <= 0:
             raise ValueError("La dimensión del control m debe ser un entero positivo.")
 
+        derivadas = {
+            "df_dx": df_dx,
+            "df_du": df_du,
+            "dl_dx": dl_dx,
+            "dl_du": dl_du,
+            "dphi_dx": dphi_dx,
+        }
+        for nombre, derivada in derivadas.items():
+            if not callable(derivada):
+                raise TypeError(
+                    f"La derivada '{nombre}' es obligatoria y debe ser callable."
+                )
+
         self._f = f
         self._l = l
         self._phi = phi
-        self._T = float(T)
+        self._t_span = (t0, tf)
+        self._t0 = t0
+        self._T = tf - t0
         self._x0 = np.asarray(x0, dtype=float)
         self._n = self._x0.shape[0]
         self._m = m
         self._conjunto = conjunto_admisible
         self._solver = solver if solver is not None else EDOSolver()
         self._df_dx = df_dx
+        self._df_du = df_du
         self._dl_dx = dl_dx
+        self._dl_du = dl_du
         self._dphi_dx = dphi_dx
 
         u_prueba = np.zeros(self._m)
@@ -234,15 +269,8 @@ class ControlProblem:
         x = np.asarray(x, dtype=float)
         p = np.asarray(p, dtype=float)
 
-        if self._dl_dx is not None:
-            grad_l = np.asarray(self._dl_dx(t, x, u))
-        else:
-            grad_l = approx_fprime(x, lambda x_var: self._l(t, x_var, u), epsilon=1e-8)
-
-        if self._df_dx is not None:
-            J_f = np.asarray(self._df_dx(t, x, u))
-        else:
-            J_f = self._jacobiano(lambda x_var: self._f(t, x_var, u), x)
+        grad_l = np.asarray(self._dl_dx(t, x, u))
+        J_f = np.asarray(self._df_dx(t, x, u))
 
         return -(grad_l + J_f.T @ p)
 
@@ -260,33 +288,4 @@ class ControlProblem:
             Gradiente del costo terminal, shape ``(n,)``.
         """
         x_T = np.asarray(x_T, dtype=float)
-        if self._dphi_dx is not None:
-            return np.asarray(self._dphi_dx(x_T))
-        return approx_fprime(x_T, self._phi, epsilon=1e-8)
-
-    @staticmethod
-    def _jacobiano(func: Callable, x: np.ndarray, epsilon: float = 1e-8) -> np.ndarray:
-        """Aproxima el Jacobiano de ``func`` en ``x`` por diferencias finitas.
-
-        Parameters
-        ----------
-        func : callable
-            Función vectorial ``func(x) -> ndarray``.
-        x : np.ndarray
-            Punto de evaluación, shape ``(n,)``.
-        epsilon : float, optional
-            Paso de diferenciación. Default ``1e-8``.
-
-        Returns
-        -------
-        np.ndarray
-            Jacobiano aproximado, shape ``(m, n)`` donde ``m = len(func(x))``.
-        """
-        x = np.asarray(x, dtype=float)
-        f0 = np.asarray(func(x))
-        jac = np.empty((f0.shape[0], x.shape[0]))
-        for i in range(x.shape[0]):
-            x_pert = x.copy()
-            x_pert[i] += epsilon
-            jac[:, i] = (np.asarray(func(x_pert)) - f0) / epsilon
-        return jac
+        return np.asarray(self._dphi_dx(x_T))

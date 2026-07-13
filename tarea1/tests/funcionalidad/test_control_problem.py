@@ -14,26 +14,30 @@ class TestControlProblemSkeleton:
         """El constructor debe almacenar correctamente los parámetros básicos."""
         problema = simple_control_problem
 
+        assert problema._t_span == (0.0, 1.0)
+        assert problema._t0 == 0.0
         assert problema._T == 1.0
         np.testing.assert_array_equal(problema._x0, np.array([1.0]))
         assert problema._n == 1
         assert problema._m == 1
         assert isinstance(problema._solver, EDOSolver)
 
-    def test_constructor_invalid_T(self):
-        """``T`` debe ser estrictamente positivo."""
+    def test_constructor_invalid_t_span(self):
+        """``t_span`` debe tener dos elementos con ``tf > t0``."""
         f = lambda t, x, u: -np.asarray(x)
         l = lambda t, x, u: float(np.dot(x, x))
         phi = lambda x: float(np.dot(x, x))
+        derivadas = _derivadas_simples()
 
-        with pytest.raises(ValueError, match="T"):
+        with pytest.raises(ValueError, match="t_span"):
             ControlProblem(
                 f=f,
                 l=l,
                 phi=phi,
-                T=0.0,
+                t_span=(1.0, 0.5),
                 x0=np.array([1.0]),
                 m=1,
+                **derivadas,
             )
 
     def test_constructor_invalid_m(self):
@@ -41,15 +45,43 @@ class TestControlProblemSkeleton:
         f = lambda t, x, u: -np.asarray(x)
         l = lambda t, x, u: float(np.dot(x, x))
         phi = lambda x: float(np.dot(x, x))
+        derivadas = _derivadas_simples()
 
         with pytest.raises(ValueError, match="m"):
             ControlProblem(
                 f=f,
                 l=l,
                 phi=phi,
-                T=1.0,
+                t_span=(0.0, 1.0),
                 x0=np.array([1.0]),
                 m=0,
+                **derivadas,
+            )
+
+    @pytest.mark.parametrize("derivada_faltante", [
+        "df_dx",
+        "df_du",
+        "dl_dx",
+        "dl_du",
+        "dphi_dx",
+    ])
+    def test_constructor_missing_derivative_raises(self, derivada_faltante):
+        """Cada una de las cinco derivadas es obligatoria."""
+        f = lambda t, x, u: -np.asarray(x)
+        l = lambda t, x, u: float(np.dot(x, x))
+        phi = lambda x: float(np.dot(x, x))
+        derivadas = _derivadas_simples()
+        derivadas[derivada_faltante] = None
+
+        with pytest.raises(TypeError, match=derivada_faltante):
+            ControlProblem(
+                f=f,
+                l=l,
+                phi=phi,
+                t_span=(0.0, 1.0),
+                x0=np.array([1.0]),
+                m=1,
+                **derivadas,
             )
 
     def test_hamiltoniano_scalar(self, simple_control_problem):
@@ -90,7 +122,12 @@ class TestControlProblemSkeleton:
             f=f,
             l=l,
             phi=phi,
-            T=1.0,
+            df_dx=lambda t, x, u: np.zeros((2, 2)),
+            df_du=lambda t, x, u: np.zeros((2, 1)),
+            dl_dx=lambda t, x, u: np.zeros(2),
+            dl_du=lambda t, x, u: np.zeros(1),
+            dphi_dx=lambda x: 2.0 * S @ x,
+            t_span=(0.0, 1.0),
             x0=np.zeros(2),
             m=1,
         )
@@ -99,3 +136,17 @@ class TestControlProblemSkeleton:
         esperado = 2.0 * S @ x_T
 
         np.testing.assert_allclose(resultado, esperado, rtol=1e-6)
+
+
+def _derivadas_simples():
+    """Devuelve derivadas analíticas para un problema escalar simple.
+
+    Dinámica f = -x, costo l = x @ x, terminal phi = x @ x.
+    """
+    return {
+        "df_dx": lambda t, x, u: np.array([[-1.0]]),
+        "df_du": lambda t, x, u: np.array([[0.0]]),
+        "dl_dx": lambda t, x, u: 2.0 * np.asarray(x),
+        "dl_du": lambda t, x, u: np.array([0.0]),
+        "dphi_dx": lambda x: 2.0 * np.asarray(x),
+    }

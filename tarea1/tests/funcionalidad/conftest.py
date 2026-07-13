@@ -74,11 +74,23 @@ def simple_control_problem(unrestricted_conjunto):
     f = lambda t, x, u: -np.asarray(x) + np.asarray(u)
     l = lambda t, x, u: float(np.dot(x, x) + np.dot(u, u))
     phi = lambda x: float(np.dot(x, x))
+
+    df_dx = lambda t, x, u: np.array([[-1.0]])
+    df_du = lambda t, x, u: np.array([[1.0]])
+    dl_dx = lambda t, x, u: 2.0 * np.asarray(x)
+    dl_du = lambda t, x, u: 2.0 * np.asarray(u)
+    dphi_dx = lambda x: 2.0 * np.asarray(x)
+
     return ControlProblem(
         f=f,
         l=l,
         phi=phi,
-        T=1.0,
+        df_dx=df_dx,
+        df_du=df_du,
+        dl_dx=dl_dx,
+        dl_du=dl_du,
+        dphi_dx=dphi_dx,
+        t_span=(0.0, 1.0),
         x0=np.array([1.0]),
         m=1,
         conjunto_admisible=unrestricted_conjunto,
