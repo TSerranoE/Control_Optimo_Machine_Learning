@@ -14,10 +14,9 @@ class TestValidacion:
     """Suite para las reglas de validación de entradas (R5)."""
 
     @pytest.mark.parametrize(
-        "campo, condicion_inicial, intervalo, paso, metodo, mensaje_esperado",
+        "condicion_inicial, intervalo, paso, metodo, mensaje_esperado",
         [
             (
-                lambda t, x, u: -np.asarray(x),
                 "foo",
                 (0.0, 1.0),
                 0.1,
@@ -25,7 +24,6 @@ class TestValidacion:
                 "x0 debe ser un ndarray numérico 1D",
             ),
             (
-                lambda t, x, u: -np.asarray(x),
                 np.array([1.0]),
                 (1.0, 0.0),
                 0.1,
@@ -33,7 +31,6 @@ class TestValidacion:
                 "t_span debe tener >= 2 puntos ordenados",
             ),
             (
-                lambda t, x, u: -np.asarray(x),
                 np.array([1.0]),
                 (0.0,),
                 0.1,
@@ -41,7 +38,6 @@ class TestValidacion:
                 "t_span debe tener >= 2 puntos ordenados",
             ),
             (
-                lambda t, x, u: -np.asarray(x),
                 np.array([1.0]),
                 (0.0, 1.0),
                 0.0,
@@ -49,7 +45,6 @@ class TestValidacion:
                 "h debe ser positivo y consistente con t_span",
             ),
             (
-                lambda t, x, u: -np.asarray(x),
                 np.array([1.0]),
                 (0.0, 1.0),
                 -0.1,
@@ -57,7 +52,6 @@ class TestValidacion:
                 "h debe ser positivo y consistente con t_span",
             ),
             (
-                lambda t, x, u: -np.asarray(x),
                 np.array([1.0]),
                 (0.0, 0.3, 0.7, 1.0),
                 np.array([0.1]),
@@ -67,45 +61,53 @@ class TestValidacion:
         ],
     )
     def test_validacion_parametrizada(
-        self, campo, condicion_inicial, intervalo, paso, metodo, mensaje_esperado
+        self,
+        campo_lineal,
+        condicion_inicial,
+        intervalo,
+        paso,
+        metodo,
+        mensaje_esperado,
     ):
         """Las entradas inválidas producen ValueError con mensaje descriptivo."""
         resolutor = EDOSolver()
         with pytest.raises(ValueError, match=mensaje_esperado):
             resolutor.solve(
-                campo, condicion_inicial, intervalo, paso, method=metodo
+                campo_lineal,
+                condicion_inicial,
+                intervalo,
+                paso,
+                method=metodo,
             )
 
 
 class TestGrillaTemporal:
     """Suite para el manejo del paso temporal escalar y arreglo."""
 
-    def test_h_escalar(self):
+    def test_h_escalar(self, campo_lineal):
         """Un paso escalar genera pasos uniformes a lo largo del intervalo."""
-        campo = lambda t, x, u: -np.asarray(x)
         condicion_inicial = np.array([1.0])
         intervalo = (0.0, 1.0)
         paso = 0.1
 
         resolutor = EDOSolver()
         solucion = resolutor.solve(
-            campo, condicion_inicial, intervalo, paso, method="euler"
+            campo_lineal, condicion_inicial, intervalo, paso, method="euler"
         )
 
         diferencias = np.diff(solucion.tiempos)
         assert np.allclose(diferencias, paso)
         assert solucion.tiempos[-1] == pytest.approx(intervalo[-1])
 
-    def test_h_arreglo(self):
+    def test_h_arreglo(self, campo_lineal):
         """Un arreglo de pasos respeta los subintervalos definidos por t_span."""
-        campo = lambda t, x, u: -np.asarray(x)
         condicion_inicial = np.array([1.0])
         intervalo = (0.0, 0.3, 0.7, 1.0)
         pasos = np.array([0.1, 0.1, 0.1])
 
         resolutor = EDOSolver()
         solucion = resolutor.solve(
-            campo, condicion_inicial, intervalo, pasos, method="euler"
+            campo_lineal, condicion_inicial, intervalo, pasos, method="euler"
         )
 
         assert solucion.tiempos[0] == pytest.approx(intervalo[0])
@@ -113,15 +115,14 @@ class TestGrillaTemporal:
         assert np.isclose(solucion.tiempos[3], intervalo[1])
         assert np.isclose(solucion.tiempos[7], intervalo[2])
 
-    def test_h_negativo_error(self):
+    def test_h_negativo_error(self, campo_lineal):
         """Un paso negativo debe ser rechazado antes de integrar."""
-        campo = lambda t, x, u: -np.asarray(x)
         condicion_inicial = np.array([1.0])
 
         resolutor = EDOSolver()
         with pytest.raises(ValueError, match="h debe ser positivo"):
             resolutor.solve(
-                campo,
+                campo_lineal,
                 condicion_inicial,
                 (0.0, 0.3, 0.7, 1.0),
                 np.array([0.1, -0.05, 0.1]),
@@ -132,46 +133,214 @@ class TestGrillaTemporal:
 class TestEuler:
     """Suite para el método de Euler progresivo."""
 
-    def test_euler_solucion_analitica(self):
+    def test_euler_solucion_analitica(self, campo_lineal):
         """Euler aproxima correctamente la exponencial decreciente."""
-        campo = lambda t, x, u: -np.asarray(x)
         condicion_inicial = np.array([1.0])
         intervalo = (0.0, 1.0)
         paso = 0.01
 
         resolutor = EDOSolver()
         solucion = resolutor.solve(
-            campo, condicion_inicial, intervalo, paso, method="euler"
+            campo_lineal, condicion_inicial, intervalo, paso, method="euler"
         )
 
         valor_final_esperado = np.exp(-1.0)
         assert abs(solucion.estados[-1, 0] - valor_final_esperado) < 0.05
 
-    def test_metodo_invalido_valueerror(self):
+    def test_metodo_invalido_valueerror(self, campo_lineal):
         """Un método desconocido lista los métodos disponibles."""
-        campo = lambda t, x, u: -np.asarray(x)
         condicion_inicial = np.array([1.0])
 
         resolutor = EDOSolver()
         with pytest.raises(ValueError, match="foo.*Disponibles"):
             resolutor.solve(
-                campo, condicion_inicial, (0.0, 1.0), 0.1, method="foo"
+                campo_lineal, condicion_inicial, (0.0, 1.0), 0.1, method="foo"
             )
+
+
+class TestControlDual:
+    """Suite para el manejo dual del control u(t) (R4)."""
+
+    @pytest.mark.parametrize(
+        "metodo, tipo_control, control, comportamiento_esperado, mensaje",
+        [
+            (
+                "rk4",
+                "callable",
+                lambda t: 0.0,
+                "ok",
+                None,
+            ),
+            (
+                "rk4",
+                "arreglo",
+                np.zeros(11),
+                "error",
+                "El método RK4 requiere que el control u sea una función callable.",
+            ),
+            (
+                "euler",
+                "callable",
+                lambda t: 0.0,
+                "warning",
+                "El control callable se evaluará sobre la grilla",
+            ),
+            (
+                "euler",
+                "arreglo",
+                np.zeros(11),
+                "ok",
+                None,
+            ),
+        ],
+    )
+    def test_control_dual_parametrizado(
+        self,
+        campo_lineal,
+        metodo,
+        tipo_control,
+        control,
+        comportamiento_esperado,
+        mensaje,
+    ):
+        """RK4 exige callable; otros métodos aceptan callable o arreglo."""
+        resolutor = EDOSolver()
+        condicion_inicial = np.array([1.0])
+        intervalo = (0.0, 1.0)
+        paso = 0.1
+
+        if comportamiento_esperado == "error":
+            with pytest.raises(ValueError, match=mensaje):
+                resolutor.solve(
+                    campo_lineal,
+                    condicion_inicial,
+                    intervalo,
+                    paso,
+                    method=metodo,
+                    u=control,
+                )
+        elif comportamiento_esperado == "warning":
+            with pytest.warns(UserWarning, match=mensaje):
+                solucion = resolutor.solve(
+                    campo_lineal,
+                    condicion_inicial,
+                    intervalo,
+                    paso,
+                    method=metodo,
+                    u=control,
+                )
+            assert solucion.estados.shape[0] == 11
+        else:
+            solucion = resolutor.solve(
+                campo_lineal,
+                condicion_inicial,
+                intervalo,
+                paso,
+                method=metodo,
+                u=control,
+            )
+            assert solucion.estados.shape[0] == 11
+
+
+class TestHeun:
+    """Suite para el método de Heun (predictor-corrector explícito)."""
+
+    def test_heun_solucion_analitica(self, campo_lineal):
+        """Heun aproxima la exponencial decreciente con orden 2."""
+        condicion_inicial = np.array([1.0])
+        intervalo = (0.0, 1.0)
+        paso = 0.01
+
+        resolutor = EDOSolver()
+        solucion = resolutor.solve(
+            campo_lineal,
+            condicion_inicial,
+            intervalo,
+            paso,
+            method="heun",
+        )
+
+        valor_final_esperado = np.exp(-1.0)
+        assert abs(solucion.estados[-1, 0] - valor_final_esperado) < 1e-4
+
+    def test_heun_intermedios(self, campo_lineal):
+        """Heun almacena el predictor z de cada paso cuando se solicita."""
+        condicion_inicial = np.array([1.0])
+        intervalo = (0.0, 0.5)
+        paso = 0.1
+
+        resolutor = EDOSolver()
+        solucion = resolutor.solve(
+            campo_lineal,
+            condicion_inicial,
+            intervalo,
+            paso,
+            method="heun",
+            guardar_intermedios=True,
+        )
+
+        assert solucion.intermedios is not None
+        assert len(solucion.intermedios) == len(solucion.tiempos) - 1
+        assert "z" in solucion.intermedios[0]
+        assert solucion.intermedios[0]["z"].shape == condicion_inicial.shape
+
+
+class TestRK4:
+    """Suite para el método de Runge-Kutta de orden 4."""
+
+    def test_rk4_alta_precision(self, campo_lineal):
+        """RK4 alcanza tolerancia menor a 1e-10 para la exponencial decreciente."""
+        condicion_inicial = np.array([1.0])
+        intervalo = (0.0, 1.0)
+        paso = 0.01
+
+        resolutor = EDOSolver()
+        solucion = resolutor.solve(
+            campo_lineal,
+            condicion_inicial,
+            intervalo,
+            paso,
+            method="rk4",
+        )
+
+        valor_final_esperado = np.exp(-1.0)
+        assert abs(solucion.estados[-1, 0] - valor_final_esperado) < 1e-10
+
+    def test_rk4_intermedios(self, campo_lineal):
+        """RK4 almacena las cuatro etapas k_i de cada paso."""
+        condicion_inicial = np.array([1.0])
+        intervalo = (0.0, 0.5)
+        paso = 0.1
+
+        resolutor = EDOSolver()
+        solucion = resolutor.solve(
+            campo_lineal,
+            condicion_inicial,
+            intervalo,
+            paso,
+            method="rk4",
+            guardar_intermedios=True,
+        )
+
+        assert solucion.intermedios is not None
+        assert len(solucion.intermedios) == len(solucion.tiempos) - 1
+        for clave in ("k1", "k2", "k3", "k4"):
+            assert clave in solucion.intermedios[0]
+            assert solucion.intermedios[0][clave].shape == condicion_inicial.shape
 
 
 class TestEDOSolution:
     """Suite para el contenedor de resultados de integración."""
 
-    def test_edosolution_atributos(self):
+    def test_edosolution_atributos(self, campo_lineal):
         """La solución expone tiempos, estados y t_span con shapes coherentes."""
-        campo = lambda t, x, u: -np.asarray(x)
         condicion_inicial = np.array([1.0])
         intervalo = (0.0, 1.0)
         paso = 0.1
 
         resolutor = EDOSolver()
         solucion = resolutor.solve(
-            campo, condicion_inicial, intervalo, paso, method="euler"
+            campo_lineal, condicion_inicial, intervalo, paso, method="euler"
         )
 
         assert isinstance(solucion, EDOSolution)
@@ -181,26 +350,24 @@ class TestEDOSolution:
         assert solucion.estados.shape == (len(solucion.tiempos), len(condicion_inicial))
         assert solucion.t_span == intervalo
 
-    def test_intermedios_desactivados(self):
+    def test_intermedios_desactivados(self, campo_lineal):
         """Por defecto no se almacenan valores intermedios del método."""
-        campo = lambda t, x, u: -np.asarray(x)
         condicion_inicial = np.array([1.0])
 
         resolutor = EDOSolver()
         solucion = resolutor.solve(
-            campo, condicion_inicial, (0.0, 0.5), 0.1, method="euler"
+            campo_lineal, condicion_inicial, (0.0, 0.5), 0.1, method="euler"
         )
 
         assert solucion.intermedios is None
 
-    def test_intermedios_activados(self):
+    def test_intermedios_activados(self, campo_lineal):
         """Al pedir intermedios, se retorna una lista con un dict por paso."""
-        campo = lambda t, x, u: -np.asarray(x)
         condicion_inicial = np.array([1.0])
 
         resolutor = EDOSolver()
         solucion = resolutor.solve(
-            campo,
+            campo_lineal,
             condicion_inicial,
             (0.0, 0.5),
             0.1,

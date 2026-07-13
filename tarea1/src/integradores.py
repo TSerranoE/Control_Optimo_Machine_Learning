@@ -5,6 +5,7 @@ ecuaciones diferenciales ordinarias y la clase ``EDOSolution`` para almacenar
 los resultados de la integración.
 """
 
+import warnings
 from dataclasses import dataclass
 from typing import Callable
 
@@ -168,10 +169,37 @@ class EDOSolver:
         tiempos: np.ndarray,
         method: str,
     ) -> Callable | np.ndarray | None:
-        """Normaliza el control para el método seleccionado."""
+        """Normaliza el control para el método seleccionado.
+
+        RK4 requiere un control callable para evaluarlo en los tiempos
+        intermedios de cada etapa. Los métodos restantes vectorizan el
+        control evaluándolo una sola vez sobre la grilla temporal.
+        """
         if u is None:
             return None
-        return u
+
+        if method == "rk4":
+            if not callable(u):
+                raise ValueError(
+                    "El método RK4 requiere que el control u sea una función callable."
+                )
+            return u
+
+        if callable(u):
+            warnings.warn(
+                "El control callable se evaluará sobre la grilla; "
+                "para mayor eficiencia use un arreglo.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return np.array([u(t) for t in tiempos])
+
+        u_array = np.asarray(u)
+        if u_array.shape[0] != len(tiempos):
+            raise ValueError(
+                "El arreglo de control debe tener la misma longitud que la grilla temporal."
+            )
+        return u_array
 
     def _resolver_integracion(
         self,
@@ -186,6 +214,8 @@ class EDOSolver:
         """Despacha al método numérico solicitado."""
         metodos_disponibles = {
             "euler": self._euler,
+            "heun": self._heun,
+            "rk4": self._rk4,
         }
         if method not in metodos_disponibles:
             raise ValueError(
@@ -202,7 +232,7 @@ class EDOSolver:
         x0: np.ndarray,
         tiempos: np.ndarray,
         pasos: np.ndarray,
-        control: Callable | np.ndarray | None,
+        control: np.ndarray | None,
         guardar_intermedios: bool,
     ) -> tuple[np.ndarray, list[dict]]:
         """Euler progresivo: x_{k+1} = x_k + h_k * f(t_k, x_k, u_k)."""
@@ -214,15 +244,95 @@ class EDOSolver:
         for k in range(num_pasos):
             t_k = tiempos[k]
             x_k = estados[k]
-            u_k = None
-            if control is not None:
-                u_k = (
-                    control(t_k)
-                    if callable(control)
-                    else control[k]
-                )
+            u_k = control[k] if control is not None else None
             pendiente = f(t_k, x_k, u_k)
             estados[k + 1] = x_k + pasos[k] * np.asarray(pendiente)
             intermedios.append({})
+
+        return estados, intermedios
+
+    def _heun(
+        self,
+        f: Callable,
+        x0: np.ndarray,
+        tiempos: np.ndarray,
+        pasos: np.ndarray,
+        control: np.ndarray | None,
+        guardar_intermedios: bool,
+    ) -> tuple[np.ndarray, list[dict]]:
+        """Heun: predictor-corrector explícito de orden 2.
+
+        Predictor: z = x_k + h_k * f(t_k, x_k, u_k)
+        Corrector: x_{k+1} = x_k + (h_k/2) * [f(t_k, x_k, u_k) +
+                                               f(t_{k+1}, z, u_{k+1})]
+        """
+        num_pasos = len(pasos)
+        estados = np.empty((num_pasos + 1, x0.size), dtype=float)
+        estados[0] = x0
+        intermedios = []
+
+        for k in range(num_pasos):
+            t_k = tiempos[k]
+            t_siguiente = tiempos[k + 1]
+            x_k = estados[k]
+            h_k = pasos[k]
+            u_k = control[k] if control is not None else None
+            u_siguiente = control[k + 1] if control is not None else None
+
+            pendiente_inicial = np.asarray(f(t_k, x_k, u_k))
+            predictor = x_k + h_k * pendiente_inicial
+            pendiente_predictor = np.asarray(f(t_siguiente, predictor, u_siguiente))
+
+            estados[k + 1] = x_k + (h_k / 2.0) * (
+                pendiente_inicial + pendiente_predictor
+            )
+            intermedios.append({"z": predictor} if guardar_intermedios else {})
+
+        return estados, intermedios
+
+    def _rk4(
+        self,
+        f: Callable,
+        x0: np.ndarray,
+        tiempos: np.ndarray,
+        pasos: np.ndarray,
+        control: Callable | None,
+        guardar_intermedios: bool,
+    ) -> tuple[np.ndarray, list[dict]]:
+        """Runge-Kutta explícito de orden 4.
+
+        RK4 evalúa el control en t_k, t_k + h_k/2 y t_k + h_k; por eso
+        requiere que u sea callable.
+        """
+        num_pasos = len(pasos)
+        estados = np.empty((num_pasos + 1, x0.size), dtype=float)
+        estados[0] = x0
+        intermedios = []
+
+        for k in range(num_pasos):
+            t_k = tiempos[k]
+            h_k = pasos[k]
+            x_k = estados[k]
+
+            u_k = control(t_k) if control is not None else None
+            k1 = np.asarray(f(t_k, x_k, u_k))
+
+            t_medio = t_k + h_k / 2.0
+            u_medio = control(t_medio) if control is not None else None
+            k2 = np.asarray(f(t_medio, x_k + (h_k / 2.0) * k1, u_medio))
+            k3 = np.asarray(f(t_medio, x_k + (h_k / 2.0) * k2, u_medio))
+
+            t_siguiente = tiempos[k + 1]
+            u_siguiente = control(t_siguiente) if control is not None else None
+            k4 = np.asarray(f(t_siguiente, x_k + h_k * k3, u_siguiente))
+
+            estados[k + 1] = x_k + (h_k / 6.0) * (
+                k1 + 2.0 * k2 + 2.0 * k3 + k4
+            )
+            intermedios.append(
+                {"k1": k1, "k2": k2, "k3": k3, "k4": k4}
+                if guardar_intermedios
+                else {}
+            )
 
         return estados, intermedios
