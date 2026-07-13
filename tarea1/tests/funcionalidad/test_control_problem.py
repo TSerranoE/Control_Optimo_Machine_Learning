@@ -84,6 +84,30 @@ class TestControlProblemSkeleton:
                 **derivadas,
             )
 
+    def test_constructor_dimension_mismatch(self):
+        """La dinámica debe devolver un vector de la misma dimensión que x0."""
+        f = lambda t, x, u: np.zeros(3)  # dimensión inconsistente con x0
+        l = lambda t, x, u: 0.0
+        phi = lambda x: 0.0
+        derivadas = {
+            "df_dx": lambda t, x, u: np.zeros((3, 2)),
+            "df_du": lambda t, x, u: np.zeros((3, 1)),
+            "dl_dx": lambda t, x, u: np.zeros(2),
+            "dl_du": lambda t, x, u: np.zeros(1),
+            "dphi_dx": lambda x: np.zeros(2),
+        }
+
+        with pytest.raises(ValueError, match="shape"):
+            ControlProblem(
+                f=f,
+                l=l,
+                phi=phi,
+                t_span=(0.0, 1.0),
+                x0=np.array([1.0, 2.0]),
+                m=1,
+                **derivadas,
+            )
+
     def test_hamiltoniano_scalar(self, simple_control_problem):
         """El Hamiltoniano debe ser ``l + p @ f`` para un caso escalar."""
         problema = simple_control_problem
