@@ -13,7 +13,7 @@ from integradores import EDOSolver, EDOSolution
 
 
 class TestValidacion:
-    """Suite para las reglas de validación de entradas (R5)."""
+    """Suite para las reglas de validación de entradas."""
 
     @pytest.mark.parametrize(
         "condicion_inicial, intervalo, paso, metodo, mensaje_esperado",
@@ -22,42 +22,42 @@ class TestValidacion:
                 "foo",
                 (0.0, 1.0),
                 0.1,
-                "euler",
+                "euler_progresivo",
                 "x0 debe ser un ndarray numérico 1D",
             ),
             (
                 np.array([1.0]),
                 (1.0, 0.0),
                 0.1,
-                "euler",
+                "euler_progresivo",
                 "t_span debe tener >= 2 puntos ordenados",
             ),
             (
                 np.array([1.0]),
                 (0.0,),
                 0.1,
-                "euler",
+                "euler_progresivo",
                 "t_span debe tener >= 2 puntos ordenados",
             ),
             (
                 np.array([1.0]),
                 (0.0, 1.0),
                 0.0,
-                "euler",
+                "euler_progresivo",
                 "h debe ser positivo y consistente con t_span",
             ),
             (
                 np.array([1.0]),
                 (0.0, 1.0),
                 -0.1,
-                "euler",
+                "euler_progresivo",
                 "h debe ser positivo y consistente con t_span",
             ),
             (
                 np.array([1.0]),
                 (0.0, 0.3, 0.7, 1.0),
                 np.array([0.1]),
-                "euler",
+                "euler_progresivo",
                 "h debe ser positivo y consistente con t_span",
             ),
         ],
@@ -94,7 +94,7 @@ class TestGrillaTemporal:
 
         resolutor = EDOSolver()
         solucion = resolutor.solve(
-            campo_lineal, condicion_inicial, intervalo, paso, method="euler"
+            campo_lineal, condicion_inicial, intervalo, paso, method="euler_progresivo"
         )
 
         diferencias = np.diff(solucion.tiempos)
@@ -109,7 +109,7 @@ class TestGrillaTemporal:
 
         resolutor = EDOSolver()
         solucion = resolutor.solve(
-            campo_lineal, condicion_inicial, intervalo, pasos, method="euler"
+            campo_lineal, condicion_inicial, intervalo, pasos, method="euler_progresivo"
         )
 
         assert solucion.tiempos[0] == pytest.approx(intervalo[0])
@@ -128,14 +128,14 @@ class TestGrillaTemporal:
                 condicion_inicial,
                 (0.0, 0.3, 0.7, 1.0),
                 np.array([0.1, -0.05, 0.1]),
-                method="euler",
+                method="euler_progresivo",
             )
 
 
-class TestEuler:
+class TestEulerProgresivo:
     """Suite para el método de Euler progresivo."""
 
-    def test_euler_solucion_analitica(self, campo_lineal):
+    def test_euler_progresivo_solucion_analitica(self, campo_lineal):
         """Euler aproxima correctamente la exponencial decreciente."""
         condicion_inicial = np.array([1.0])
         intervalo = (0.0, 1.0)
@@ -143,7 +143,7 @@ class TestEuler:
 
         resolutor = EDOSolver()
         solucion = resolutor.solve(
-            campo_lineal, condicion_inicial, intervalo, paso, method="euler"
+            campo_lineal, condicion_inicial, intervalo, paso, method="euler_progresivo"
         )
 
         valor_final_esperado = np.exp(-1.0)
@@ -161,7 +161,7 @@ class TestEuler:
 
 
 class TestControlDual:
-    """Suite para el manejo dual del control u(t) (R4)."""
+    """Suite para el manejo dual del control u(t)."""
 
     @pytest.mark.parametrize(
         "metodo, tipo_control, control, comportamiento_esperado, mensaje",
@@ -181,14 +181,14 @@ class TestControlDual:
                 "El método RK4 requiere que el control u sea una función callable.",
             ),
             (
-                "euler",
+                "euler_progresivo",
                 "callable",
                 lambda t: 0.0,
                 "warning",
                 "El control callable se evaluará sobre la grilla",
             ),
             (
-                "euler",
+                "euler_progresivo",
                 "arreglo",
                 np.zeros(11),
                 "ok",
@@ -407,7 +407,7 @@ class TestEDOSolution:
 
         resolutor = EDOSolver()
         solucion = resolutor.solve(
-            campo_lineal, condicion_inicial, intervalo, paso, method="euler"
+            campo_lineal, condicion_inicial, intervalo, paso, method="euler_progresivo"
         )
 
         assert isinstance(solucion, EDOSolution)
@@ -423,7 +423,7 @@ class TestEDOSolution:
 
         resolutor = EDOSolver()
         solucion = resolutor.solve(
-            campo_lineal, condicion_inicial, (0.0, 0.5), 0.1, method="euler"
+            campo_lineal, condicion_inicial, (0.0, 0.5), 0.1, method="euler_progresivo"
         )
 
         assert solucion.intermedios is None
@@ -438,7 +438,7 @@ class TestEDOSolution:
             condicion_inicial,
             (0.0, 0.5),
             0.1,
-            method="euler",
+            method="euler_progresivo",
             guardar_intermedios=True,
         )
 

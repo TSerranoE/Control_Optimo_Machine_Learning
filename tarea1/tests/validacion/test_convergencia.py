@@ -60,7 +60,7 @@ def problema_lineal():
 @pytest.mark.parametrize(
     "metodo, paso_base, ratio_esperado, tolerancia",
     [
-        ("euler", 0.02, 2.0, 0.5),
+        ("euler_progresivo", 0.02, 2.0, 0.5),
         ("heun", 0.02, 4.0, 1.0),
         ("crank_nicolson", 0.02, 4.0, 1.0),
         ("rk4", 0.05, 16.0, 4.0),

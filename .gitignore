@@ -50,6 +50,10 @@ htmlcov/
 # Configuración interna de herramientas de agentes
 .atl/
 
+# Artefactos de planificación SDD (persistidos en Engram; no en git)
+openspec/
+sdd/
+
 # Archivos de instrucciones y enunciados del curso
 instrucciones_ia.md
 Tarea_1.md

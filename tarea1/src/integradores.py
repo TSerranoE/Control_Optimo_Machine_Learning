@@ -40,7 +40,7 @@ class EDOSolution:
 class EDOSolver:
     """Resuelve EDOs dx/dt = f(t, x, u) con 5 métodos numéricos."""
 
-    METODOS = ("euler", "euler_implicito", "heun", "crank_nicolson", "rk4")
+    METODOS = ("euler_progresivo", "euler_implicito", "heun", "crank_nicolson", "rk4")
 
     def solve(
         self,
@@ -66,7 +66,7 @@ class EDOSolver:
         h : float or np.ndarray
             Paso temporal (escalar positivo o ndarray positivo).
         method : str
-            Método numérico: 'euler', 'euler_implicito', 'heun',
+            Método numérico: 'euler_progresivo', 'euler_implicito', 'heun',
             'crank_nicolson', 'rk4'.
         u : callable or np.ndarray, optional
             Control u(t). Default None.
@@ -113,7 +113,12 @@ class EDOSolver:
         u: Callable | np.ndarray | None,
         argumentos_fsolve: dict | None,
     ) -> None:
-        """Valida las entradas de ``solve`` según las reglas de R5."""
+        """Valida las entradas de ``solve`` antes de construir la grilla.
+
+        Lanza ``ValueError`` o ``TypeError`` con mensajes descriptivos cuando
+        algún parámetro no cumple las restricciones del problema de valor
+        inicial (dimensiones, orden, positividad, método soportado, etc.).
+        """
         if not isinstance(x0, np.ndarray) or not np.issubdtype(x0.dtype, np.number):
             raise ValueError("x0 debe ser un ndarray numérico 1D")
         if x0.ndim != 1 or x0.size == 0:
@@ -144,25 +149,40 @@ class EDOSolver:
     def _construir_grilla(
         self, t_span: tuple[float, ...], h: float | np.ndarray
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Construye la grilla temporal y el arreglo de pasos.
+        """Construye la grilla temporal y el arreglo de pasos efectivos.
 
         Expande un paso escalar al número de subintervalos definido por
-        ``t_span``. Cada entrada de ``h`` gobierna el paso dentro del
-        subintervalo correspondiente de ``t_span``.
+        ``t_span``. Cuando la longitud de un subintervalo no es múltiplo
+        exacto del paso solicitado, se redondea el número de pasos y se
+        ajusta el paso efectivo para que la grilla termine exactamente en
+        los puntos de ruptura de ``t_span``.
         """
         t_span_array = np.asarray(t_span, dtype=float)
-        pasos = np.asarray(h, dtype=float)
-        if pasos.ndim == 0:
-            pasos = np.full(len(t_span_array) - 1, pasos.item())
+        pasos_solicitados = np.asarray(h, dtype=float)
+        if pasos_solicitados.ndim == 0:
+            pasos_solicitados = np.full(
+                len(t_span_array) - 1, pasos_solicitados.item()
+            )
 
         subgrillas = [np.array([t_span_array[0]], dtype=float)]
         pasos_expandidos = []
-        for j in range(len(pasos)):
+        for j in range(len(pasos_solicitados)):
             longitud = t_span_array[j + 1] - t_span_array[j]
-            numero_pasos = int(np.round(longitud / pasos[j]))
+            numero_pasos = int(np.round(longitud / pasos_solicitados[j]))
             if numero_pasos <= 0:
                 numero_pasos = 1
+
             paso_efectivo = longitud / numero_pasos
+            if not np.isclose(paso_efectivo, pasos_solicitados[j]):
+                warnings.warn(
+                    f"El paso solicitado {pasos_solicitados[j]} no divide "
+                    f"exactamente el subintervalo [{t_span_array[j]}, "
+                    f"{t_span_array[j + 1]}]; se usará paso efectivo "
+                    f"{paso_efectivo:.6g} ({numero_pasos} pasos).",
+                    UserWarning,
+                    stacklevel=3,
+                )
+
             tiempos_sub = np.linspace(
                 t_span_array[j], t_span_array[j + 1], numero_pasos + 1
             )
@@ -223,7 +243,7 @@ class EDOSolver:
     ) -> tuple[np.ndarray, list[dict] | None]:
         """Despacha al método numérico solicitado."""
         metodos_disponibles = {
-            "euler": self._euler,
+            "euler_progresivo": self._euler_progresivo,
             "euler_implicito": self._euler_implicito,
             "heun": self._heun,
             "crank_nicolson": self._crank_nicolson,
@@ -232,9 +252,11 @@ class EDOSolver:
         estados, intermedios = metodos_disponibles[method](
             f, x0, tiempos, pasos, control, guardar_intermedios, argumentos_fsolve
         )
-        return estados, intermedios if guardar_intermedios else None
+        if guardar_intermedios:
+            return estados, intermedios
+        return estados, None
 
-    def _euler(
+    def _euler_progresivo(
         self,
         f: Callable,
         x0: np.ndarray,
@@ -298,6 +320,8 @@ class EDOSolver:
             h_k = pasos[k]
             u_siguiente = control[k + 1] if control is not None else None
 
+            # La closure captura las variables del paso actual; fsolve la
+            # evalúa iterativamente para distintos valores de z.
             def residual(z: np.ndarray) -> np.ndarray:
                 return z - x_k - h_k * np.asarray(f(t_siguiente, z, u_siguiente))
 
@@ -338,6 +362,8 @@ class EDOSolver:
 
             pendiente_inicial = np.asarray(f(t_k, x_k, u_k))
 
+            # La closure captura las variables del paso actual; fsolve la
+            # evalúa iterativamente para distintos valores de z.
             def residual(z: np.ndarray) -> np.ndarray:
                 pendiente_final = np.asarray(f(t_siguiente, z, u_siguiente))
                 return z - x_k - (h_k / 2.0) * (
