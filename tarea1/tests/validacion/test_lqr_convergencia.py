@@ -103,6 +103,6 @@ class TestLQRConvergencia:
             u_opt, h=h, metodo_integracion="euler_progresivo"
         )
         P_0 = problema._P_interp(0.0).reshape(n, n)
-        esperado = float(problema._x0 @ P_0 @ problema._x0)
+        esperado = 0.5 * float(problema._x0 @ P_0 @ problema._x0)
 
         assert costo == pytest.approx(esperado, rel=1e-3)

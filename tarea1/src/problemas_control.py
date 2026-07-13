@@ -492,17 +492,19 @@ class ProblemaLQR(ControlProblem):
         f = lambda t, x, u: A @ np.asarray(x, dtype=float) + B @ np.asarray(
             u, dtype=float
         )
-        l = lambda t, x, u: float(
+        l = lambda t, x, u: 0.5 * float(
             np.asarray(x, dtype=float) @ Q @ np.asarray(x, dtype=float)
             + np.asarray(u, dtype=float) @ R @ np.asarray(u, dtype=float)
         )
-        phi = lambda x: float(np.asarray(x, dtype=float) @ S @ np.asarray(x, dtype=float))
+        phi = lambda x: 0.5 * float(
+            np.asarray(x, dtype=float) @ S @ np.asarray(x, dtype=float)
+        )
 
         df_dx = lambda t, x, u: A
         df_du = lambda t, x, u: B
-        dl_dx = lambda t, x, u: 2.0 * Q @ np.asarray(x, dtype=float)
-        dl_du = lambda t, x, u: 2.0 * R @ np.asarray(u, dtype=float)
-        dphi_dx = lambda x: 2.0 * S @ np.asarray(x, dtype=float)
+        dl_dx = lambda t, x, u: Q @ np.asarray(x, dtype=float)
+        dl_du = lambda t, x, u: R @ np.asarray(u, dtype=float)
+        dphi_dx = lambda x: S @ np.asarray(x, dtype=float)
 
         super().__init__(
             f=f,
