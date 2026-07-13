@@ -1,10 +1,14 @@
 # ---
 # jupyter:
 #   jupytext:
-#     formats: py:percent
+#     cell_metadata_filter: all
+#     formats: ma6914_tarea1/notebooks///ipynb,ma6914_tarea1/notebooks///py:percent
+#     notebook_metadata_filter: all
 #     text_representation:
 #       extension: .py
 #       format_name: percent
+#       format_version: '1.3'
+#       jupytext_version: 1.19.4
 #   kernelspec:
 #     display_name: Python 3
 #     language: python

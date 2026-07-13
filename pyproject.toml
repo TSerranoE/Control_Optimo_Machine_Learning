@@ -21,6 +21,11 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 
 [tool.jupytext]
-formats = "notebooks///py:percent"
+formats = [
+    "ma6914_tarea1/notebooks///ipynb",
+    "ma6914_tarea1/notebooks///py:percent",
+    "ma6914_tarea2/notebooks///ipynb",
+    "ma6914_tarea2/notebooks///py:percent",
+]
 notebook_metadata_filter = "all"
 cell_metadata_filter = "all"

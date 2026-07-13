@@ -35,7 +35,9 @@ htmlcov/
 
 # Jupyter / Jupytext
 .ipynb_checkpoints/
-*.ipynb
+
+# Nota: los notebooks de ejecución se versionan en pareja (.ipynb + .py)
+# mediante jupytext. No ignorar *.ipynb en las carpetas de notebooks.
 
 # IDEs y editores
 .vscode/

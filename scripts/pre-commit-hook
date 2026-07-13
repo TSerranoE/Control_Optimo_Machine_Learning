@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Hook de pre-commit: sincroniza notebooks emparejados antes de cada commit.
+# Este archivo se copia a .git/hooks/pre-commit mediante install_precommit_hook.sh.
+
+echo "[pre-commit] Sincronizando notebooks emparejados..."
+./scripts/sync_notebooks.sh
+
+echo "[pre-commit] Verificando que los notebooks estén actualizados en el índice..."
+if ! git diff --exit-code -- ma6914_tarea*/notebooks/*.ipynb ma6914_tarea*/notebooks/*.py >/dev/null 2>&1; then
+    echo "[pre-commit] ERROR: la sincronización generó cambios no agregados al índice."
+    echo "[pre-commit] Revisa los cambios, ejecuta 'git add' sobre los notebooks y vuelve a commitear."
+    exit 1
+fi
+
+echo "[pre-commit] Notebooks sincronizados y listos para commit."

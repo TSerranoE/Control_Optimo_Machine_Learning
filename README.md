@@ -41,8 +41,34 @@ uv sync
 uv run pytest
 ```
 
-## Conversión de notebooks con Jupytext
+## Notebooks emparejados con Jupytext
+
+Los notebooks se mantienen en formato dual:
+- `.py` con formato `py:percent` (texto plano, ideal para diff y revisiones).
+- `.ipynb` (formato nativo de Jupyter, listo para ejecutar en un entorno interactivo).
+
+Ambos archivos se versionan. La configuración en `pyproject.toml` define el emparejamiento para las carpetas `ma6914_tarea1/notebooks/` y `ma6914_tarea2/notebooks/`.
+
+### Sincronización manual
 
 ```bash
-uv run jupytext --to notebook ma6914_tarea1/notebooks/ejecucion_tarea1.py
+./scripts/sync_notebooks.sh
 ```
+
+### Instalación del hook de pre-commit
+
+Para que los notebooks se sincronicen automáticamente antes de cada commit:
+
+```bash
+./scripts/install_precommit_hook.sh
+```
+
+### Verificación por el orquestador (gga / sdd-verify)
+
+El flujo de verificación debe ejecutar el script de sincronización y comprobar que no haya diferencias pendientes entre `.py` y `.ipynb`:
+
+```bash
+./scripts/sync_notebooks.sh
+```
+
+Si el script falla, significa que las dos representaciones de algún notebook no están alineadas.
