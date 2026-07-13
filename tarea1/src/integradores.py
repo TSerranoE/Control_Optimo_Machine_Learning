@@ -85,7 +85,7 @@ class EDOSolver:
         self._validar_entradas(f, x0, t_span, h, method, u, argumentos_fsolve)
         tiempos, pasos = self._construir_grilla(t_span, h)
         control = self._preprocesar_control(u, tiempos, method)
-        argumentos_fsolve = argumentos_fsolve or {"xtol": 1e-8}
+        argumentos_fsolve = argumentos_fsolve or {"xtol": 1e-10, "maxfev": 200}
         estados, intermedios = self._resolver_integracion(
             f,
             x0,
