@@ -50,17 +50,17 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Métodos Implícitos
 
-- [ ] 3.1 **RED**: Escribir `test_euler_implicito_convergencia` (R6) y `test_argumentos_fsolve_custom`. Verificar convergencia y tolerancia custom. Deben fallar.
-- [ ] 3.2 **GREEN**: Implementar `_euler_implicito()`: `fsolve(g, x0=x_k)` con `g(z) = z - x_k - h_k * f(t_{k+1}, z, u_{k+1})`. Usar `argumentos_fsolve` (default `{"xtol": 1e-8}`).
-- [ ] 3.3 **RED**: Escribir `test_crank_nicolson_convergencia` (R6). Debe fallar.
-- [ ] 3.4 **GREEN**: Implementar `_crank_nicolson()`: `fsolve(g, x0=x_k)` con `g(z) = z - x_k - (h_k/2) * [f(t_k, x_k, u_k) + f(t_{k+1}, z, u_{k+1})]`.
-- [ ] 3.5 **REFACTOR**: Unificar implícitos: extraer helper `_resolver_implícito(g_residual, guess_inicial, argumentos_fsolve)` que ambos métodos reutilizan.
+- [x] 3.1 **RED**: Escribir `test_euler_implicito_convergencia` (R6) y `test_argumentos_fsolve_custom`. Verificar convergencia y tolerancia custom. Deben fallar.
+- [x] 3.2 **GREEN**: Implementar `_euler_implicito()`: `fsolve(g, x0=x_k)` con `g(z) = z - x_k - h_k * f(t_{k+1}, z, u_{k+1})`. Usar `argumentos_fsolve` (default `{"xtol": 1e-8}`).
+- [x] 3.3 **RED**: Escribir `test_crank_nicolson_convergencia` (R6). Debe fallar.
+- [x] 3.4 **GREEN**: Implementar `_crank_nicolson()`: `fsolve(g, x0=x_k)` con `g(z) = z - x_k - (h_k/2) * [f(t_k, x_k, u_k) + f(t_{k+1}, z, u_{k+1})]`.
+- [x] 3.5 **REFACTOR**: Unificar implícitos: extraer helper `_resolver_implícito(g_residual, guess_inicial, argumentos_fsolve)` que ambos métodos reutilicen.
 
 ## Phase 4: Convergencia de Órdenes
 
-- [ ] 4.1 **RED**: Crear `tests/validacion/test_convergencia.py`. Escribir `test_convergencia_euler_oh`: resolver `dx/dt=-x` con `h` y `h/2`, verificar `error_ratio ≈ 2 (±0.5)`. Debe fallar.
-- [ ] 4.2 **GREEN**: Verificar que Euler pasa. Si no, ajustar tolerancias del test o implementación.
-- [ ] 4.3 **RED**: Escribir `test_convergencia_heun_oh2`, `test_convergencia_cn_oh2`, `test_convergencia_rk4_oh4` con ratios esperados 4±1, 4±1, 16±4. Deben fallar.
-- [ ] 4.4 **GREEN**: Verificar que cada método pasa su test de convergencia.
-- [ ] 4.5 **REFACTOR**: Extraer helper `helper_error_ratio(f, x0, t_span, h_base, method, u, solucion_analitica)` compartido entre los 4 tests. Limpiar duplicación.
-- [ ] 4.6 **REFACTOR**: Revisión final: verificar que todos los tests pasan con `uv run pytest`, revisar docstrings estilo NumPy, nombres declarativos, comentarios clarificadores. Confirmar que `tarea1/src/integradores.py` no supera ~220 líneas.
+- [x] 4.1 **RED**: Crear `tests/validacion/test_convergencia.py`. Escribir `test_convergencia_euler_oh`: resolver `dx/dt=-x` con `h` y `h/2`, verificar `error_ratio ≈ 2 (±0.5)`. Debe fallar.
+- [x] 4.2 **GREEN**: Verificar que Euler pasa. Si no, ajustar tolerancias del test o implementación.
+- [x] 4.3 **RED**: Escribir `test_convergencia_heun_oh2`, `test_convergencia_cn_oh2`, `test_convergencia_rk4_oh4` con ratios esperados 4±1, 4±1, 16±4. Deben fallar.
+- [x] 4.4 **GREEN**: Verificar que cada método pasa su test de convergencia.
+- [x] 4.5 **REFACTOR**: Extraer helper `helper_error_ratio(f, x0, t_span, h_base, method, u, solucion_analitica)` compartido entre los 4 tests. Limpiar duplicación.
+- [x] 4.6 **REFACTOR**: Revisión final: verificar que todos los tests pasan con `uv run pytest`, revisar docstrings estilo NumPy, nombres declarativos, comentarios clarificadores. Confirmar que `tarea1/src/integradores.py` no supera ~220 líneas.

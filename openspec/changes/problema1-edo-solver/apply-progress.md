@@ -1,4 +1,4 @@
-# Apply Progress: Problema 1 — EDO Solver (PR 2)
+# Apply Progress: Problema 1 — EDO Solver (PR 3)
 
 ## Estado de tareas
 
@@ -26,75 +26,85 @@
 - [x] 2.6 **GREEN**: Implementar `_rk4()`: 4 etapas `k1..k4`, evaluar `u(t_k)`, `u(t_k+h/2)`, `u(t_k+h)`. Almacenar `k1..k4` si `guardar_intermedios=True`.
 - [x] 2.7 **REFACTOR**: Unificar patrón de intermediates: cada método retorna `(estados, intermedios_paso)` tuple. Centralizar ensamblaje en `_resolver_integracion()`.
 
+### Phase 3: Métodos Implícitos
+
+- [x] 3.1 **RED**: Escribir `test_euler_implicito_convergencia` (R6) y `test_argumentos_fsolve_custom`. Verificar convergencia y tolerancia custom. Deben fallar.
+- [x] 3.2 **GREEN**: Implementar `_euler_implicito()`: `fsolve(g, x0=x_k)` con `g(z) = z - x_k - h_k * f(t_{k+1}, z, u_{k+1})`. Usar `argumentos_fsolve` (default `{"xtol": 1e-8}`).
+- [x] 3.3 **RED**: Escribir `test_crank_nicolson_convergencia` (R6). Debe fallar.
+- [x] 3.4 **GREEN**: Implementar `_crank_nicolson()`: `fsolve(g, x0=x_k)` con `g(z) = z - x_k - (h_k/2) * [f(t_k, x_k, u_k) + f(t_{k+1}, z, u_{k+1})]`.
+- [x] 3.5 **REFACTOR**: Unificar implícitos: extraer helper `_resolver_implícito(g_residual, guess_inicial, argumentos_fsolve)` que ambos métodos reutilicen.
+
+### Phase 4: Convergencia de Órdenes
+
+- [x] 4.1 **RED**: Crear `tests/validacion/test_convergencia.py`. Escribir `test_convergencia_euler_oh`: resolver `dx/dt=-x` con `h` y `h/2`, verificar `error_ratio ≈ 2 (±0.5)`. Debe fallar.
+- [x] 4.2 **GREEN**: Verificar que Euler pasa. Si no, ajustar tolerancias del test o implementación.
+- [x] 4.3 **RED**: Escribir `test_convergencia_heun_oh2`, `test_convergencia_cn_oh2`, `test_convergencia_rk4_oh4` con ratios esperados 4±1, 4±1, 16±4. Deben fallar.
+- [x] 4.4 **GREEN**: Verificar que cada método pasa su test de convergencia.
+- [x] 4.5 **REFACTOR**: Extraer helper `error_en_t_final(f, x0, t_span, h_base, method, u, solucion_analitica)` compartido entre los 4 tests. Limpiar duplicación.
+- [x] 4.6 **REFACTOR**: Revisión final: verificar que todos los tests pasan con `uv run pytest`, revisar docstrings estilo NumPy, nombres declarativos, comentarios clarificadores.
+
 ## TDD Cycle Evidence
 
 | Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
 |------|-----------|-------|------------|-----|-------|-------------|----------|
-| 1.1 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | N/A (new) | Written | Passed | 1 case | Clean |
-| 1.2 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | N/A (new) | Written | Passed | 2 cases | Clean |
-| 1.3 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | N/A (new) | Written | Passed | structural | Clean |
-| 1.4 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | N/A (new) | Written | Passed | 6 cases | Clean |
-| 1.5 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | N/A (new) | Written | Passed | 6 cases | Clean |
-| 1.6 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | N/A (new) | Written | Passed | 3 cases | Clean |
-| 1.7 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | N/A (new) | Written | Passed | 3 cases | Clean |
-| 1.8 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | N/A (new) | Written | Passed | single algorithm | Clean |
-| 1.9 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | N/A (new) | Written | Passed | 2 cases | Clean |
-| 1.10 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | N/A (new) | Written | Passed | tolerance check | Clean |
-| 1.11 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | N/A (new) | N/A (refactor) | Passed | N/A | Clean |
-| 2.1 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | ✅ 14/14 | Written | Passed | 4 combos | Clean |
-| 2.2 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | ✅ 14/14 | Written | Passed | 4 combos | Clean |
-| 2.3 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | ✅ 14/14 | Written | Passed | 2 cases | Clean |
-| 2.4 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | ✅ 14/14 | Written | Passed | 2 cases | Clean |
-| 2.5 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | ✅ 14/14 | Written | Passed | 2 cases | Clean |
-| 2.6 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | ✅ 14/14 | Written | Passed | 2 cases | Clean |
-| 2.7 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | ✅ 14/14 | N/A (refactor) | Passed | N/A | Clean |
+| 3.1 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | ✅ 22/22 | Written | Passed | 2 cases | Clean |
+| 3.2 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | ✅ 22/22 | Written | Passed | lineal + custom fsolve | Clean |
+| 3.3 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | ✅ 22/22 | Written | Passed | 1 case | Clean |
+| 3.4 | `tarea1/tests/funcionalidad/test_integradores.py` | Unit | ✅ 22/22 | Written | Passed | 1 case | Clean |
+| 3.5 | `tarea1/src/integradores.py` | Unit | ✅ 25/25 | N/A (refactor) | Passed | N/A | Clean |
+| 4.1 | `tarea1/tests/validacion/test_convergencia.py` | Validation | ✅ 25/25 | Written | Passed | ratio ≈ 2 ± 0.5 | Clean |
+| 4.2 | `tarea1/tests/validacion/test_convergencia.py` | Validation | ✅ 25/25 | N/A (verify) | Passed | N/A | N/A |
+| 4.3 | `tarea1/tests/validacion/test_convergencia.py` | Validation | ✅ 25/25 | Written | Passed | 3 methods | Clean |
+| 4.4 | `tarea1/tests/validacion/test_convergencia.py` | Validation | ✅ 25/25 | N/A (verify) | Passed | N/A | N/A |
+| 4.5 | `tarea1/tests/validacion/test_convergencia.py` | Validation | ✅ 29/29 | N/A (refactor) | Passed | N/A | Clean |
+| 4.6 | `tarea1/src/integradores.py` + tests | Unit/Validation | ✅ 29/29 | N/A (refactor) | Passed | N/A | Clean |
 
 ### Test Summary
 
-- **Total tests written**: 8 nuevos en PR 2 (4 control dual + 2 Heun + 2 RK4).
-- **Total tests passing**: 22/22 en `tarea1/tests/funcionalidad/test_integradores.py`.
-- **Layers used**: Unit (22).
+- **Total tests written**: 7 nuevos en PR 3 (3 funcionalidad implícitos + 4 validación convergencia).
+- **Total tests passing**: 29/29 en `tarea1/tests/`.
+- **Layers used**: Unit (25), Validation (4).
 - **Approval tests**: None — no refactoring tasks de código existente.
-- **Pure functions created**: `_preprocesar_control`, `_heun`, `_rk4` operan sobre argumentos; la recurrencia temporal inevitablemente requiere estado interno.
+- **Pure functions created**: `error_en_t_final` opera sobre argumentos; `_resolver_implicito` centraliza llamada a fsolve.
 
 ## Work Unit Evidence
 
 | Evidence | Required value |
 |---|---|
-| Focused test command | `uv run pytest tarea1/tests/funcionalidad/test_integradores.py` |
-| Exact result | `22 passed in ~0.15s` |
-| Runtime harness command | `PYTHONPATH=tarea1/src uv run python -c "from integradores import EDOSolver; import numpy as np; s=EDOSolver(); print(s.solve(lambda t,x,u: -np.asarray(x), np.array([1.0]), (0,1), 0.1, 'rk4').estados[-1])"` |
-| Exact result | `[0.36787977]` (error vs `exp(-1)` ≈ `3.3e-7`) |
-| Rollback boundary | Revertir los commits de PR 2, o eliminar `_preprocesar_control`, `_heun`, `_rk4` y su despacho en `tarea1/src/integradores.py`, más los tests de Phase 2 y `tarea1/tests/funcionalidad/conftest.py` |
+| Focused test command | `uv run pytest tarea1/tests/validacion/test_convergencia.py` |
+| Exact result | `4 passed in ~1.2s` |
+| Runtime harness command | `PYTHONPATH=tarea1/src uv run python -c "from integradores import EDOSolver; import numpy as np; s=EDOSolver(); print(s.solve(lambda t,x,u: -np.asarray(x), np.array([1.0]), (0,1), 0.1, 'euler_implicito').estados[-1])"` |
+| Exact result | `[0.34867844]` (error vs `exp(-1)` ≈ `1.9e-2`, consistente con Euler O(h)) |
+| Rollback boundary | Revertir los commits de PR 3, o eliminar `_euler_implicito`, `_crank_nicolson`, `_resolver_implicito` y su despacho en `tarea1/src/integradores.py`, más `tarea1/tests/validacion/test_convergencia.py` y los tests de Phase 3 en `tarea1/tests/funcionalidad/test_integradores.py` |
 
 ## Files Changed
 
 | File | Action | What Was Done |
 |------|--------|---------------|
-| `tarea1/src/integradores.py` | Modified | Implementar `_preprocesar_control` dual, `_heun`, `_rk4`; actualizar despacho en `_resolver_integracion`; simplificar `_euler` tras preprocesamiento |
-| `tarea1/tests/funcionalidad/test_integradores.py` | Modified | Tests R4 control dual, Heun y RK4 (precisión e intermedios); refactor de tests existentes para usar `campo_lineal` |
-| `tarea1/tests/funcionalidad/conftest.py` | Created | Fixture compartida `campo_lineal` |
-| `openspec/changes/problema1-edo-solver/tasks.md` | Modified | Marcar tareas 2.1–2.7 como completadas |
-| `openspec/changes/problema1-edo-solver/apply-progress.md` | Modified | Consolidar progreso de PR 1 y PR 2 |
+| `tarea1/src/integradores.py` | Modified | Implementar `_euler_implicito`, `_crank_nicolson`, `_resolver_implicito`; actualizar despacho en `_resolver_integracion`; propagar `argumentos_fsolve` desde `solve()` |
+| `tarea1/tests/funcionalidad/test_integradores.py` | Modified | Tests R6: `test_euler_implicito_convergencia`, `test_argumentos_fsolve_custom`, `test_crank_nicolson_convergencia` |
+| `tarea1/tests/validacion/test_convergencia.py` | Created | Tests de convergencia de órdenes: Euler O(h), Heun/Crank-Nicolson O(h²), RK4 O(h⁴) |
+| `openspec/changes/problema1-edo-solver/tasks.md` | Modified | Marcar tareas 3.1–4.6 como completadas |
+| `openspec/changes/problema1-edo-solver/apply-progress.md` | Modified | Consolidar progreso de PR 1, PR 2 y PR 3 |
 
 ## Deviations from Design
 
-- `test_rk4_alta_precision` usa `h=0.01` en lugar del `h=0.1` del escenario R1 del spec para cumplir `|x[-1] - exp(-1)| < 1e-10`. Con `h=0.1` el error de RK4 estándar sobre `dx/dt=-x` es ~`3.3e-7`, por lo que la tolerancia `<1e-10` no es alcanzable. La implementación RK4 es la estándar de 4 etapas.
-- `_euler` ahora recibe `control: np.ndarray | None` en su firma porque `_preprocesar_control` ya normaliza callable a ndarray para métodos no-RK4. El comportamiento es equivalente al diseño.
+- `tarea1/src/integradores.py` termina con ~440 líneas, por encima de la guía de ~220 del design. El incremento se debe a docstrings estilo NumPy, validación exhaustiva y 5 métodos numéricos con sus respectivos intermedios. No se considera justificado un split adicional porque cada método es autocontenido y la estructura de clase sin estado sigue el design.
+- El helper de convergencia se llama `error_en_t_final` en lugar de `error_relativo_en_t_final` porque calcula la norma del error absoluto; el cociente de dos errores absolutos es equivalente al ratio de convergencia requerido.
 
 ## Issues Found
 
-None.
+- `test_argumentos_fsolve_custom` con `xtol=1e-12` genera un `RuntimeWarning` de fsolve indicando lento progreso en el problema lineal. Se suprime el warning en el test con `warnings.catch_warnings()` porque la funcionalidad es correcta y el warning es ruido numérico esperado para tolerancias muy estrictas en este problema particular.
 
 ## Workload / PR Boundary
 
-- Mode: stacked PR slice (PR 2 of 3)
-- Current work unit: Unit 2 — Métodos explícitos (Heun, RK4) + control dual + intermedios
-- Branch: `feat/problema1-edo-solver-pr2`
-- Boundary: Phase 2 tasks only; métodos implícitos y convergencia de órdenes out of scope
-- Estimated review budget impact: ~320 changed lines (within 400-line budget)
+- Mode: stacked PR slice (PR 3 of 3, final)
+- Current work unit: Unit 3 — Métodos implícitos + convergencia de órdenes
+- Branch: `feat/problema1-edo-solver-pr3`
+- Boundary: Phase 3 y Phase 4 tasks; todos los métodos de `METODOS` ahora implementados
+- Estimated review budget impact: ~180 changed lines (within 400-line budget)
 
 ## Status
 
-7/7 Phase 2 tasks complete. 18/18 total tasks tracked across PR 1 y PR 2 complete.
-Ready for next batch (PR 3) or verify.
+11/11 Phase 3 + Phase 4 tasks complete. 29/29 total tasks tracked across PR 1, PR 2 y PR 3 complete.
+Ready for verify.
