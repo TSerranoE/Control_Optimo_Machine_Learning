@@ -181,7 +181,7 @@ class TestControlProblemCostoYOptimo:
 
     def test_evaluar_costo_requires_h(self, simple_control_problem):
         """``evaluar_costo`` debe exigir el paso de integración ``h``."""
-        with pytest.raises(ValueError, match="h"):
+        with pytest.raises(TypeError, match="h"):
             simple_control_problem.evaluar_costo(lambda t: np.zeros(1))
 
     def test_evaluar_costo_callable(self, simple_control_problem):

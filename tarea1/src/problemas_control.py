@@ -296,7 +296,7 @@ class ControlProblem:
     def evaluar_costo(
         self,
         u_traj: Callable | np.ndarray,
-        h: float | None = None,
+        h: float,
         metodo_integracion: str | None = None,
     ) -> float:
         """Evalúa el funcional de costo Bolza para una trayectoria de control.
@@ -323,14 +323,9 @@ class ControlProblem:
 
         Raises
         ------
-        ValueError
-            Si ``h`` es ``None``.
+        TypeError
+            Si no se proporciona el paso de integración ``h``.
         """
-        if h is None:
-            raise ValueError(
-                "El paso de integración h es obligatorio para evaluar el costo."
-            )
-
         sol = self._solver.solve(
             self._f,
             self._x0,
