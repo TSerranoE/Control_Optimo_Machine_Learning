@@ -8,12 +8,13 @@ dependencies = [
     "jupytext>=1.19.4",
     "matplotlib>=3.11.0",
     "numpy>=2.5.1",
+    "pandas>=3.0.3",
     "pytest>=9.1.1",
     "scipy>=1.18.0",
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["tarea1/src", "tarea2/src"]
+pythonpath = ["tarea1", "tarea1/src", "tarea2", "tarea2/src"]
 testpaths = ["tarea1/tests", "tarea2/tests"]
 addopts = "-ra -q"
 python_files = ["test_*.py", "*_test.py"]
@@ -31,7 +32,7 @@ notebook_metadata_filter = "all"
 cell_metadata_filter = "all"
 
 [tool.coverage.run]
-source = ["tarea1/src", "tarea2/src"]
+source = ["tarea1/src", "tarea1/utils", "tarea2/src"]
 branch = true
 
 [tool.coverage.report]
