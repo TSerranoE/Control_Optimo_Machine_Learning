@@ -1,0 +1,75 @@
+"""Validación del problema SIR con control de vacunación."""
+
+import numpy as np
+import pytest
+
+from metodos_optimizacion import fbsm
+from validacion_problema3 import crear_problema_sir
+
+
+@pytest.fixture(scope="module")
+def sir_problema():
+    return crear_problema_sir(
+        beta=0.3, gamma=0.1, A=10.0, B=1.0, u_max=0.4,
+        S0=0.99, I0=0.01, T=50.0,
+    )
+
+
+@pytest.fixture(scope="module")
+def sir_resultado(sir_problema):
+    h = 0.05
+    return fbsm(
+        sir_problema, np.zeros((int(50.0 / h) + 1, 1)), h,
+        metodo_integracion="crank_nicolson", max_iter=200, tol=1e-6,
+        omega=0.99,
+    )
+
+
+def test_sir_dynamics_evaluation(sir_problema):
+    derivada = sir_problema._f(0.0, np.array([0.99, 0.01]), np.array([0.0]))
+    np.testing.assert_allclose(derivada, [-0.00297, 0.00197])
+
+
+def test_sir_cost_functional(sir_problema):
+    costo = sir_problema._l(0.0, np.array([0.5, 0.5]), np.array([0.3]))
+    assert costo == pytest.approx(5.045)
+
+
+def test_sir_box_constraint(sir_problema):
+    np.testing.assert_allclose(sir_problema._conjunto.proyectar(np.array([-1.0])), [0.0])
+    np.testing.assert_allclose(sir_problema._conjunto.proyectar(np.array([1.0])), [0.4])
+
+
+@pytest.mark.slow
+def test_sir_nonnegative_states(sir_resultado):
+    assert np.min(sir_resultado.estado[:, 0]) >= 0.0
+    assert np.min(sir_resultado.estado[:, 1]) >= 0.0
+
+
+@pytest.mark.slow
+def test_sir_control_in_bounds(sir_resultado):
+    assert np.min(sir_resultado.control_optimo) >= 0.0
+    assert np.max(sir_resultado.control_optimo) <= 0.4
+
+
+@pytest.mark.slow
+def test_sir_ab_ratio_qualitative(sir_resultado):
+    problema_bajo = crear_problema_sir(
+        beta=0.3, gamma=0.1, A=1.0, B=1.0, u_max=0.4,
+        S0=0.99, I0=0.01, T=50.0,
+    )
+    h = 0.05
+    resultado_bajo = fbsm(
+        problema_bajo, np.zeros((int(50.0 / h) + 1, 1)), h,
+        metodo_integracion="crank_nicolson", max_iter=200, tol=1e-6,
+        omega=0.99,
+    )
+    assert resultado_bajo.convergio
+    assert np.mean(sir_resultado.control_optimo) > np.mean(resultado_bajo.control_optimo)
+
+
+@pytest.mark.slow
+def test_sir_fbsm_convergence(sir_resultado):
+    assert sir_resultado.convergio
+    assert np.all(np.isfinite(sir_resultado.estado))
+    assert np.all(np.isfinite(sir_resultado.control_optimo))

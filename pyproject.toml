@@ -20,6 +20,7 @@ addopts = "-ra -q"
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = ["slow: computationally intensive validation tests"]
 
 [tool.jupytext]
 formats = [
