@@ -360,6 +360,252 @@ class ControlProblem:
         integral = np.trapezoid(costos, tiempos)
         return float(integral + self._phi(estados[-1]))
 
+    def _normalizar_control(
+        self, u: np.ndarray, metodo_integracion: str
+    ) -> tuple[np.ndarray, float]:
+        """Valida un control nodal y devuelve su paso temporal inferido."""
+        if metodo_integracion not in EDOSolver.METODOS:
+            raise ValueError(
+                f"Método '{metodo_integracion}' no válido. "
+                f"Disponibles: {EDOSolver.METODOS}"
+            )
+
+        control = np.asarray(u, dtype=float)
+        if control.ndim == 1 and self._m == 1:
+            control = control.reshape(-1, 1)
+        if control.ndim != 2 or control.shape[1] != self._m:
+            raise ValueError(
+                f"El control debe tener shape (N, {self._m}) con N >= 2."
+            )
+        if control.shape[0] < 2:
+            raise ValueError("El control debe contener al menos dos nodos.")
+        if not np.all(np.isfinite(control)):
+            raise ValueError("El control debe contener solo valores finitos.")
+
+        h = self._T / (control.shape[0] - 1)
+        return control.copy(), h
+
+    def _integrar_estado(
+        self, control: np.ndarray, h: float, metodo_integracion: str
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Integra el estado usando el convenio de control de cada método."""
+        u_solver = control
+        if metodo_integracion == "rk4":
+            tiempos = np.linspace(self._t0, self._t_span[1], control.shape[0])
+            u_solver = interp1d(tiempos, control, axis=0, kind="linear")
+        solucion = self._solver.solve(
+            self._f,
+            self._x0,
+            self._t_span,
+            h,
+            method=metodo_integracion,
+            u=u_solver,
+        )
+        return solucion.tiempos, solucion.estados
+
+    def _integrar_adjunto(
+        self,
+        tiempos: np.ndarray,
+        estados: np.ndarray,
+        control: np.ndarray,
+        h: float,
+        metodo_integracion: str,
+    ) -> np.ndarray:
+        """Integra el adjunto continuo por reversión temporal."""
+        tf = self._t_span[1]
+        q_0 = self.condicion_transversalidad(estados[-1])
+
+        def campo_reverso(tau, q, datos):
+            x = np.asarray(datos[: self._n], dtype=float)
+            u = np.asarray(datos[self._n :], dtype=float)
+            return -self.sistema_adjunto(tf - tau, x, q, u)
+
+        datos_nodales = np.hstack((estados, control))
+        if metodo_integracion == "rk4":
+            interpolador = interp1d(tiempos, datos_nodales, axis=0, kind="linear")
+            datos_reversos = lambda tau: np.asarray(interpolador(tf - tau))
+        else:
+            datos_reversos = datos_nodales[::-1]
+
+        solucion = self._solver.solve(
+            campo_reverso,
+            q_0,
+            (0.0, self._T),
+            h,
+            method=metodo_integracion,
+            u=datos_reversos,
+        )
+        return solucion.estados[::-1]
+
+    @staticmethod
+    def _integrar_valores(
+        valores: np.ndarray,
+        h: float,
+        metodo_integracion: str,
+        valores_medios: np.ndarray | None = None,
+    ) -> float:
+        """Integra valores escalares con la cuadratura del método."""
+        if metodo_integracion == "euler_progresivo":
+            return float(h * np.sum(valores[:-1]))
+        if metodo_integracion == "euler_implicito":
+            return float(h * np.sum(valores[1:]))
+        if metodo_integracion in ("heun", "crank_nicolson"):
+            return float(h * np.sum((valores[:-1] + valores[1:]) / 2.0))
+
+        return float(
+            h
+            * np.sum(
+                (valores[:-1] + 4.0 * valores_medios + valores[1:]) / 6.0
+            )
+        )
+
+    def _evaluar_costo_nodal(
+        self, u: np.ndarray, metodo_integracion: str
+    ) -> float:
+        """Evalúa el costo con cuadratura consistente con el método."""
+        control, h = self._normalizar_control(u, metodo_integracion)
+        tiempos, estados = self._integrar_estado(control, h, metodo_integracion)
+        valores = np.array(
+            [self._l(t, x, c) for t, x, c in zip(tiempos, estados, control)],
+            dtype=float,
+        )
+        valores_medios = None
+        if metodo_integracion == "rk4":
+            valores_medios = np.array(
+                [
+                    self._l(
+                        (tiempos[k] + tiempos[k + 1]) / 2.0,
+                        (estados[k] + estados[k + 1]) / 2.0,
+                        (control[k] + control[k + 1]) / 2.0,
+                    )
+                    for k in range(len(tiempos) - 1)
+                ],
+                dtype=float,
+            )
+        integral = self._integrar_valores(
+            valores, h, metodo_integracion, valores_medios
+        )
+        return float(integral + self._phi(estados[-1]))
+
+    def grad(self, u: np.ndarray, metodo_integracion: str) -> np.ndarray:
+        """Calcula el gradiente reducido mediante el adjunto continuo."""
+        control, h = self._normalizar_control(u, metodo_integracion)
+        tiempos, estados = self._integrar_estado(control, h, metodo_integracion)
+        adjuntos = self._integrar_adjunto(
+            tiempos, estados, control, h, metodo_integracion
+        )
+        return np.array(
+            [
+                np.asarray(self._dl_du(t, x, c), dtype=float)
+                + np.asarray(self._df_du(t, x, c), dtype=float).T @ p
+                for t, x, c, p in zip(tiempos, estados, control, adjuntos)
+            ],
+            dtype=float,
+        )
+
+    def L2InnerProd(
+        self, u_1: np.ndarray, u_2: np.ndarray, metodo_integracion: str
+    ) -> float:
+        """Calcula el producto interno L2 con cuadratura según el método."""
+        primero, h = self._normalizar_control(u_1, metodo_integracion)
+        segundo, _ = self._normalizar_control(u_2, metodo_integracion)
+        if primero.shape != segundo.shape:
+            raise ValueError("Los controles deben tener el mismo shape.")
+
+        valores = np.einsum("ij,ij->i", primero, segundo)
+        valores_medios = None
+        if metodo_integracion == "rk4":
+            primero_medio = (primero[:-1] + primero[1:]) / 2.0
+            segundo_medio = (segundo[:-1] + segundo[1:]) / 2.0
+            valores_medios = np.einsum("ij,ij->i", primero_medio, segundo_medio)
+        return self._integrar_valores(
+            valores, h, metodo_integracion, valores_medios
+        )
+
+    def L2Norm(self, u: np.ndarray, metodo_integracion: str) -> float:
+        """Calcula la norma inducida por ``L2InnerProd``."""
+        producto = self.L2InnerProd(u, u, metodo_integracion)
+        return float(np.sqrt(max(0.0, producto)))
+
+    def proj(self, u: np.ndarray, metodo_integracion: str) -> np.ndarray:
+        """Proyecta un control nodal punto a punto sobre el conjunto admisible."""
+        control, _ = self._normalizar_control(u, metodo_integracion)
+        if self._conjunto is None:
+            return control
+        return np.array([self._conjunto.proyectar(nodo) for nodo in control])
+
+    def BBStep(
+        self,
+        u_1: np.ndarray,
+        u_2: np.ndarray,
+        g_1: np.ndarray,
+        g_2: np.ndarray,
+        metodo_integracion: str,
+        *,
+        t_min: float = 1e-12,
+    ) -> float:
+        """Calcula el paso espectral BB con salvaguardas."""
+        if not np.isfinite(t_min) or not 0.0 < t_min <= 1.0:
+            raise ValueError("t_min debe pertenecer a (0, 1].")
+        controles = [
+            self._normalizar_control(valor, metodo_integracion)[0]
+            for valor in (u_1, u_2, g_1, g_2)
+        ]
+        if len({valor.shape for valor in controles}) != 1:
+            raise ValueError("Los controles y gradientes deben tener el mismo shape.")
+
+        s = controles[1] - controles[0]
+        y = controles[3] - controles[2]
+        numerador = self.L2InnerProd(s, s, metodo_integracion)
+        denominador = self.L2InnerProd(s, y, metodo_integracion)
+        umbral = np.finfo(float).eps * abs(numerador)
+        if not np.isfinite(denominador) or denominador <= umbral:
+            return 1.0
+        paso = numerador / denominador
+        if not np.isfinite(paso) or paso <= 0.0:
+            return 1.0
+        return float(np.clip(paso, t_min, 1.0))
+
+    def backtracking(
+        self,
+        u: np.ndarray,
+        g: np.ndarray,
+        v: np.ndarray,
+        a: float,
+        b: float,
+        J_hat: float,
+        metodo_integracion: str,
+        t_inicial: float = 1,
+        *,
+        max_reducciones: int = 50,
+    ) -> float:
+        """Busca un paso que satisfaga Armijo no monótono."""
+        if not 0.0 < a < 1.0 or not 0.0 < b < 1.0:
+            raise ValueError("a y b deben pertenecer a (0, 1).")
+        if not np.isfinite(J_hat):
+            raise ValueError("J_hat debe ser finito.")
+        if not np.isfinite(t_inicial) or t_inicial <= 0.0:
+            raise ValueError("t_inicial debe ser positivo y finito.")
+        if not isinstance(max_reducciones, int) or max_reducciones < 1:
+            raise ValueError("max_reducciones debe ser un entero positivo.")
+
+        control, _ = self._normalizar_control(u, metodo_integracion)
+        gradiente, _ = self._normalizar_control(g, metodo_integracion)
+        direccion, _ = self._normalizar_control(v, metodo_integracion)
+        if control.shape != gradiente.shape or control.shape != direccion.shape:
+            raise ValueError("u, g y v deben tener el mismo shape.")
+
+        producto = self.L2InnerProd(gradiente, direccion, metodo_integracion)
+        paso = float(t_inicial)
+        for reduccion in range(max_reducciones + 1):
+            candidato = control + paso * direccion
+            costo = self._evaluar_costo_nodal(candidato, metodo_integracion)
+            if costo <= J_hat + a * paso * producto:
+                return paso
+            if reduccion < max_reducciones:
+                paso *= b
+        raise RuntimeError("El backtracking agotó las reducciones permitidas.")
+
     def control_optimo_puntual(
         self, t: float, x: np.ndarray, p: np.ndarray
     ) -> np.ndarray:
