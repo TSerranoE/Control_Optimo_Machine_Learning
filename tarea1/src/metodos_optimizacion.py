@@ -14,33 +14,14 @@ from integradores import EDOSolver
 from problemas_control import ControlProblem
 
 
-@dataclass
+@dataclass(frozen=True)
 class ResultadoFBSM:
-    """Resultado del Forward-Backward Sweep Method.
+    """Trayectorias finales e historial inmutable de una ejecución de FBSM."""
 
-    Attributes
-    ----------
-    u : np.ndarray
-        Control óptimo u*(t_k), shape (N+1, m).
-    x : np.ndarray
-        Trayectoria de estado x(t_k), shape (N+1, n).
-    p : np.ndarray
-        Trayectoria del costado p(t_k), shape (N+1, n).
-    t : np.ndarray
-        Grilla temporal t_k, shape (N+1,).
-    historia_J : list[float]
-        Valor del funcional de costo en cada iteración.
-    iteraciones : int
-        Número de iteraciones ejecutadas.
-    convergio : bool
-        True si el criterio de convergencia se satisfizo antes de max_iter.
-    """
-
-    u: np.ndarray
-    x: np.ndarray
-    p: np.ndarray
-    t: np.ndarray
-    historia_J: list[float]
+    control_optimo: np.ndarray
+    estado: np.ndarray
+    adjunto: np.ndarray
+    historia_costo: tuple[float, ...]
     iteraciones: int
     convergio: bool
 
@@ -53,33 +34,7 @@ def _integrar_adjunto_atras(
     h: float,
     metodo: str,
 ) -> np.ndarray:
-    """Integra el sistema adjunto hacia atrás mediante reversión temporal.
-
-    Usa la transformación ``τ = T - t`` para integrar hacia adelante en ``τ``
-    con ``EDOSolver``, evitando así modificar el integrador para pasos
-    negativos. Las trayectorias de estado y control se interpolan
-    linealmente sobre la grilla directa.
-
-    Parameters
-    ----------
-    problema : ControlProblem
-        Problema de control con ``sistema_adjunto`` y ``condicion_transversalidad``.
-    x_traj : np.ndarray
-        Trayectoria de estado en la grilla directa, shape (N+1, n).
-    u_traj : np.ndarray
-        Trayectoria de control en la grilla directa, shape (N+1, m).
-    tiempos : np.ndarray
-        Grilla temporal directa, shape (N+1,).
-    h : float
-        Paso de integración (positivo).
-    metodo : str
-        Método de ``EDOSolver``.
-
-    Returns
-    -------
-    np.ndarray
-        Trayectoria del costado ``p(t)`` en la grilla directa, shape (N+1, n).
-    """
+    """Integra el costado hacia atrás usando ``τ = T - t`` y ``EDOSolver``."""
     t0 = tiempos[0]
     T = tiempos[-1] - t0
 
@@ -106,3 +61,100 @@ def _integrar_adjunto_atras(
     sol = solver.solve(dp_dtau, p_terminal, (0.0, T), h, method=metodo)
 
     return sol.estados[::-1]
+
+
+def fbsm(
+    problema: ControlProblem,
+    u_inicial: np.ndarray,
+    h: float,
+    metodo_integracion: str = "rk4",
+    max_iter: int = 100,
+    tol: float = 1e-6,
+    omega: float = 0.99,
+) -> ResultadoFBSM:
+    """Resuelve un problema de control óptimo mediante barridos sucesivos."""
+    if h <= 0:
+        raise ValueError("h debe ser positivo.")
+    if max_iter < 1:
+        raise ValueError("max_iter debe ser al menos 1.")
+    if tol <= 0:
+        raise ValueError("tol debe ser positiva.")
+    if not 0 < omega <= 1:
+        raise ValueError("omega debe pertenecer a (0, 1].")
+
+    t0, tf = problema._t_span
+    numero_pasos = int(np.round((tf - t0) / h))
+    tiempos = np.linspace(t0, tf, numero_pasos + 1)
+    u_actual = np.asarray(u_inicial, dtype=float).copy()
+    shape_esperada = (numero_pasos + 1, problema._m)
+    if u_actual.shape != shape_esperada:
+        raise ValueError(f"u_inicial debe tener shape {shape_esperada}.")
+
+    def control_interpolado(u_traj: np.ndarray):
+        interpolador = interp1d(tiempos, u_traj, axis=0, kind="linear")
+        return lambda t: np.asarray(interpolador(t), dtype=float)
+
+    def control_para_solver(u_traj: np.ndarray):
+        if metodo_integracion == "rk4":
+            return control_interpolado(u_traj)
+        return u_traj
+
+    def integrar_estado(u_traj: np.ndarray) -> np.ndarray:
+        solucion = problema._solver.solve(
+            problema._f,
+            problema._x0,
+            problema._t_span,
+            h,
+            method=metodo_integracion,
+            u=control_para_solver(u_traj),
+        )
+        return solucion.estados
+
+    historia_costo: list[float] = []
+    costo_anterior: float | None = None
+    convergio = False
+
+    for iteracion in range(1, max_iter + 1):
+        estado = integrar_estado(u_actual)
+        adjunto = _integrar_adjunto_atras(
+            problema, estado, u_actual, tiempos, h, metodo_integracion
+        )
+        u_puntual = np.array(
+            [
+                problema.control_optimo_puntual(t, x, p)
+                for t, x, p in zip(tiempos, estado, adjunto)
+            ],
+            dtype=float,
+        )
+        u_nuevo = (1.0 - omega) * u_actual + omega * u_puntual
+        if problema._conjunto is not None:
+            u_nuevo = np.array([problema._conjunto.proyectar(u) for u in u_nuevo])
+
+        costo_nuevo = problema.evaluar_costo(
+            control_para_solver(u_nuevo), h, metodo_integracion
+        )
+        historia_costo.append(costo_nuevo)
+        if costo_anterior is not None:
+            cambio_relativo = abs(costo_nuevo - costo_anterior) / max(
+                abs(costo_nuevo), np.finfo(float).eps
+            )
+            if cambio_relativo < tol:
+                convergio = True
+        u_actual = u_nuevo
+        costo_anterior = costo_nuevo
+        if convergio:
+            break
+
+    # Las trayectorias retornadas corresponden al control final, no al barrido previo.
+    estado = integrar_estado(u_actual)
+    adjunto = _integrar_adjunto_atras(
+        problema, estado, u_actual, tiempos, h, metodo_integracion
+    )
+    return ResultadoFBSM(
+        control_optimo=u_actual,
+        estado=estado,
+        adjunto=adjunto,
+        historia_costo=tuple(historia_costo),
+        iteraciones=iteracion,
+        convergio=convergio,
+    )
