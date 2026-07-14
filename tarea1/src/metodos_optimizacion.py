@@ -113,7 +113,6 @@ def fbsm(
     historia_costo: list[float] = []
     costo_anterior: float | None = None
     convergio = False
-    omega_efectivo = omega
 
     for iteracion in range(1, max_iter + 1):
         estado = integrar_estado(u_actual)
@@ -127,7 +126,7 @@ def fbsm(
             ],
             dtype=float,
         )
-        u_nuevo = (1.0 - omega_efectivo) * u_actual + omega_efectivo * u_puntual
+        u_nuevo = (1.0 - omega) * u_actual + omega * u_puntual
         if problema._conjunto is not None:
             u_nuevo = np.array([problema._conjunto.proyectar(u) for u in u_nuevo])
 
@@ -136,8 +135,6 @@ def fbsm(
         )
         historia_costo.append(costo_nuevo)
         if costo_anterior is not None:
-            if costo_nuevo > costo_anterior:
-                omega_efectivo = max(0.5 * omega_efectivo, 0.01)
             cambio_relativo = abs(costo_nuevo - costo_anterior) / max(
                 abs(costo_nuevo), np.finfo(float).eps
             )

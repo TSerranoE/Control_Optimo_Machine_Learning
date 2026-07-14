@@ -21,7 +21,7 @@ def sir_resultado(sir_problema):
     return fbsm(
         sir_problema, np.zeros((int(50.0 / h) + 1, 1)), h,
         metodo_integracion="crank_nicolson", max_iter=200, tol=1e-6,
-        omega=0.99,
+        omega=0.2,
     )
 
 
@@ -62,7 +62,7 @@ def test_sir_ab_ratio_qualitative(sir_resultado):
     resultado_bajo = fbsm(
         problema_bajo, np.zeros((int(50.0 / h) + 1, 1)), h,
         metodo_integracion="crank_nicolson", max_iter=200, tol=1e-6,
-        omega=0.99,
+        omega=0.2,
     )
     assert resultado_bajo.convergio
     assert np.mean(sir_resultado.control_optimo) > np.mean(resultado_bajo.control_optimo)
@@ -71,5 +71,19 @@ def test_sir_ab_ratio_qualitative(sir_resultado):
 @pytest.mark.slow
 def test_sir_fbsm_convergence(sir_resultado):
     assert sir_resultado.convergio
+    assert sir_resultado.iteraciones == 49
+    assert np.all(np.diff(sir_resultado.historia_costo) <= 0.0)
     assert np.all(np.isfinite(sir_resultado.estado))
     assert np.all(np.isfinite(sir_resultado.control_optimo))
+
+
+@pytest.mark.slow
+def test_sir_fbsm_preserves_fixed_omega_after_cost_increase(sir_problema):
+    h = 0.05
+    resultado = fbsm(
+        sir_problema, np.zeros((int(50.0 / h) + 1, 1)), h,
+        metodo_integracion="crank_nicolson", max_iter=4, tol=1e-15,
+        omega=0.99,
+    )
+    assert resultado.historia_costo[2] > resultado.historia_costo[1]
+    assert resultado.historia_costo[3] == pytest.approx(3.0518904753, rel=1e-6)
