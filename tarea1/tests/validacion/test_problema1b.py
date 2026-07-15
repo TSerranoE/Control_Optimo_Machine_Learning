@@ -672,5 +672,7 @@ class TestHelpersVisualizacion:
         tabla = tabla_resultados(resultados)
 
         assert isinstance(tabla, pd.DataFrame)
-        assert list(tabla.columns) == ["metodo", "h", "error_inf", "tiempo_s"]
+        assert list(tabla.columns) == [
+            "metodo", "h", "estado", "error_inf", "tiempo_s"
+        ]
         assert len(tabla) == 2

@@ -7,7 +7,8 @@ experimentos numéricos.
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
+
+from utils.resultados import tabla_resultados
 
 
 def _formatear_h(h):
@@ -244,22 +245,3 @@ def graficar_diagrama_fase(
         fig.savefig(ruta_salida, dpi=150, bbox_inches="tight")
 
     return fig
-
-
-def tabla_resultados(resultados):
-    """Construye un DataFrame con los resultados del experimento.
-
-    Parameters
-    ----------
-    resultados : list[dict]
-        Lista de diccionarios con claves ``metodo``, ``h``, ``error_inf`` y
-        ``tiempo_s``.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Tabla con columnas ``metodo``, ``h``, ``error_inf`` y ``tiempo_s``.
-    """
-    return pd.DataFrame(
-        resultados, columns=["metodo", "h", "error_inf", "tiempo_s"]
-    )

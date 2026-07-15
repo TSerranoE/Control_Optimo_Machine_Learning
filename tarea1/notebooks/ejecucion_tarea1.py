@@ -29,10 +29,14 @@
 import os
 import sys
 import warnings
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Permite imports absolutos tanto en Jupyter como al ejecutar el script.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+TAREA1_DIR = Path(__file__).resolve().parents[1]
+SRC_DIR = TAREA1_DIR / "src"
+sys.path.insert(0, str(TAREA1_DIR))
+sys.path.insert(0, str(SRC_DIR))
 
 import matplotlib
 import numpy as np
@@ -55,18 +59,19 @@ from src.validacion_problema1 import (
     crear_referencia,
     ejecutar_experimento,
 )
+from utils.resultados import renderizar_latex, serializar_csv, tabla_resultados
 from utils.visualizacion import (
     graficar_diagrama_fase,
     graficar_error_vs_h,
     graficar_referencia_vs_aproximada,
-    tabla_resultados,
 )
 
-RUTA_BASE = Path("tarea1/resultados_graficos")
+RUTA_BASE = TAREA1_DIR / "resultados_graficos"
 RUTA_LOTKA = RUTA_BASE / "1_lotka_volterra"
 RUTA_VDP = RUTA_BASE / "1_van_der_pol"
+RUTA_ASSETS_PROBLEMA1 = TAREA1_DIR / "informe/assets/generated/problema1"
 
-for ruta in [RUTA_LOTKA, RUTA_VDP]:
+for ruta in [RUTA_LOTKA, RUTA_VDP, RUTA_ASSETS_PROBLEMA1]:
     ruta.mkdir(parents=True, exist_ok=True)
 
 hs = [0.1, 0.05, 0.025, 0.0125, 0.00625]
@@ -81,10 +86,10 @@ print(f"Métodos: {metodos}")
 
 # %%
 parametros_lotka = {
-    "alpha": 1.0,
-    "beta": 0.1,
-    "delta": 0.075,
-    "gamma": 1.5,
+    "alpha": 1.1,
+    "beta": 0.4,
+    "delta": 0.1,
+    "gamma": 0.4,
 }
 x0_lotka = np.array([10.0, 5.0])
 t0_lotka, tf_lotka = 0.0, 15.0
@@ -108,13 +113,13 @@ print(tabla_resultados(resultados_lotka).to_string(index=False))
 # %%
 caption_error_lotka = (
     "Referencia: Crank-Nicolson con h=1e-4. "
-    "Parámetros: α=1.0, β=0.1, δ=0.075, γ=1.5, "
+    "Parámetros oficiales: α=1.1, β=0.4, δ=0.1, γ=0.4, "
     "x₀=[10, 5], t∈[0, 15]"
 )
 
 fig_error_lotka = graficar_error_vs_h(
     resultados_lotka,
-    ruta_salida=RUTA_LOTKA / "error_vs_h.png",
+    ruta_salida=RUTA_ASSETS_PROBLEMA1 / "lotka_volterra_error_vs_h.png",
     titulo="Lotka-Volterra: error vs paso temporal",
     metodo_referencia="Crank-Nicolson",
     h_referencia=1e-4,
@@ -144,7 +149,7 @@ solucion_lotka = resolutor_lotka.solve(
 caption_series_lotka = (
     "Referencia: Crank-Nicolson h=1e-4. Aproximación: RK4 h=0.1. "
     "Componentes: x₁(t) y x₂(t). "
-    "Parámetros: α=1.0, β=0.1, δ=0.075, γ=1.5, x₀=[10, 5]"
+    "Parámetros oficiales: α=1.1, β=0.4, δ=0.1, γ=0.4, x₀=[10, 5]"
 )
 
 fig_series_lotka = graficar_referencia_vs_aproximada(
@@ -153,7 +158,7 @@ fig_series_lotka = graficar_referencia_vs_aproximada(
     solucion_lotka.tiempos,
     solucion_lotka.estados,
     "Lotka-Volterra: evolución temporal",
-    ruta_salida=RUTA_LOTKA / "series_temporales.png",
+    ruta_salida=RUTA_ASSETS_PROBLEMA1 / "lotka_volterra_series_temporales.png",
     nombres_componentes=["x_1(t)", "x_2(t)"],
     descripcion_referencia="Referencia (CN h=1e-4)",
     descripcion_aproximacion="Aproximación (RK4 h=0.1)",
@@ -162,18 +167,18 @@ fig_series_lotka = graficar_referencia_vs_aproximada(
 
 caption_fase_lotka = (
     "Calculado con Crank-Nicolson h=1e-4. "
-    "Parámetros: α=1.0, β=0.1, δ=0.075, γ=1.5, x₀=[10, 5]"
+    "Parámetros oficiales: α=1.1, β=0.4, δ=0.1, γ=0.4, x₀=[10, 5]"
 )
 
 fig_fase_lotka = graficar_diagrama_fase(
     x_ref_lotka.estados,
     "Lotka-Volterra: diagrama de fase",
-    ruta_salida=RUTA_LOTKA / "diagrama_fase.png",
+    ruta_salida=RUTA_ASSETS_PROBLEMA1 / "lotka_volterra_diagrama_fase.png",
     caption=caption_fase_lotka,
 )
 
 # %% [markdown]
-# ## Problema 1b - Van der Pol ($\mu = 0.1$)
+# ## Complementario - Van der Pol ($\mu = 0.1$)
 
 # %%
 parametros_vdp_suave = {"mu": 0.1}
@@ -190,7 +195,7 @@ resultados_vdp_suave = ejecutar_experimento(
     metodos,
 )
 
-print("Tabla de resultados - Van der Pol (mu=0.1)")
+print("Tabla complementaria - Van der Pol (mu=0.1)")
 print(tabla_resultados(resultados_vdp_suave).to_string(index=False))
 
 # %%
@@ -244,13 +249,12 @@ fig_fase_vdp_suave = graficar_diagrama_fase(
 # - `tf = 1000` para el diagrama de fase, donde se necesita un horizonte
 #   largo para observar parte del ciclo límite de relajación
 #   (período ~1.6·μ ≈ 1600 para μ=1000).
-# - `h_referencia = 1e-5` para el caso stiff, calculado con los argumentos
-#   por defecto de fsolve para reducir el tiempo de cómputo.
+# - `h_referencia = 1e-5` para el caso stiff, con tolerancia y máximo de
+#   evaluaciones explícitos. Esta referencia limita la interpretación del error.
 
 # %%
 parametros_vdp_stiff = {"mu": 1000.0}
 tf_vdp_stiff = 10.0
-tf_vdp_stiff_fase = 3000.0
 h_referencia_stiff = 1e-5
 argumentos_fsolve_stiff = {"xtol": 1e-10, "maxfev": 200}
 
@@ -334,22 +338,41 @@ resultados_vdp_stiff = (
 )
 
 print("\nTabla comparativa - Van der Pol (mu=1000)")
-print(tabla_resultados(resultados_vdp_stiff).to_string(index=False))
+tabla_vdp_stiff = tabla_resultados(resultados_vdp_stiff)
+print(tabla_vdp_stiff.to_string(index=False))
+
+ruta_csv_vdp_stiff = (
+    RUTA_ASSETS_PROBLEMA1 / "van_der_pol_mu_1000_time_precision.csv"
+)
+ruta_latex_vdp_stiff = (
+    RUTA_ASSETS_PROBLEMA1 / "van_der_pol_mu_1000_time_precision.tex"
+)
+ruta_csv_vdp_stiff.write_bytes(serializar_csv(tabla_vdp_stiff).encode("utf-8"))
+ruta_latex_vdp_stiff.write_text(
+    renderizar_latex(tabla_vdp_stiff), encoding="utf-8", newline="\n"
+)
+
+print("Limitación: tiempo_s is one observed execution, not a stable benchmark.")
+print(
+    "Limitación de referencia: los errores se comparan contra "
+    f"Crank-Nicolson con h={h_referencia_stiff}; no prueban precisión absoluta."
+)
+print(f"Ejecución UTC: {datetime.now(timezone.utc).isoformat()}")
+print(f"Entorno: Python {sys.version.split()[0]}, NumPy {np.__version__}")
+print(
+    "Configuración oficial Lotka-Volterra: "
+    f"parametros={parametros_lotka}, x0={x0_lotka.tolist()}"
+)
 
 # %% [markdown]
 # **Observaciones de los experimentos stiff:**
 #
-# - Los métodos explícitos con pasos grandes (`h >= 0.00125`) divergen
-#   (`error_inf = NaN`), lo que confirma la inestabilidad para $\mu = 1000$.
-# - Los métodos implícitos con pasos grandes son estables y producen errores
-#   pequeños, incluso con `h = 0.1`.
-# - Los métodos explícitos con paso pequeño (`h = 1e-5`) logran errores
-#   razonables, pero requieren mucho más tiempo que los implícitos con
-#   pasos grandes. RK4 alcanza un piso de error alrededor de `1.8e-8`,
-#   impuesto por la referencia (`h_ref = 1e-5`): al usar pasos RK4 más
-#   pequeños que la referencia, el error de la propia referencia domina.
-#   Refinar más la referencia (p. ej. `h_ref = 1e-6`) mejoraría la medida,
-#   pero el costo de cómputo se vuelve prohibitivo.
+# - Las filas no finitas son evidencia observada de inestabilidad numérica en
+#   esta ejecución; por sí solas no demuestran una causa.
+# - `tiempo_s` corresponde a una sola ejecución observada, no a un benchmark
+#   estable ni a una comparación repetida de rendimiento.
+# - Los errores están condicionados por la referencia Crank-Nicolson con
+#   `h_ref = 1e-5`; no constituyen una afirmación de precisión absoluta.
 
 # %%
 caption_vdp_stiff = (
@@ -425,4 +448,6 @@ fig_fase_vdp_stiff = graficar_diagrama_fase(
 for ruta in sorted(RUTA_LOTKA.glob("*.png")):
     print(ruta)
 for ruta in sorted(RUTA_VDP.glob("*.png")):
+    print(ruta)
+for ruta in sorted(RUTA_ASSETS_PROBLEMA1.iterdir()):
     print(ruta)

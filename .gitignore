@@ -67,5 +67,14 @@ Tarea_2.pdf
 *.jpeg
 *.svg
 *.pdf
+!tarea1/informe/informe.pdf
 *.csv
 *.txt
+tarea1/informe/assets/generated/*
+!tarea1/informe/assets/generated/problema1/
+tarea1/informe/assets/generated/problema1/*
+!tarea1/informe/assets/generated/problema1/lotka_volterra_error_vs_h.png
+!tarea1/informe/assets/generated/problema1/lotka_volterra_series_temporales.png
+!tarea1/informe/assets/generated/problema1/lotka_volterra_diagrama_fase.png
+!tarea1/informe/assets/generated/problema1/van_der_pol_mu_1000_time_precision.csv
+!tarea1/informe/assets/generated/problema1/van_der_pol_mu_1000_time_precision.tex
