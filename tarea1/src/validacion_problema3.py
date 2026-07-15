@@ -5,6 +5,38 @@ import numpy as np
 from problemas_control import ConjuntoAdmisible, ControlProblem
 
 
+def crear_problema_lqr_fbsm(
+    a: float,
+    b: float,
+    q: float,
+    r: float,
+    s: float,
+    T: float,
+    x0: float,
+) -> ControlProblem:
+    """Crea un LQR escalar genérico cuyo minimizador depende del adjunto."""
+    problema = ControlProblem(
+        f=lambda t, x, u: np.array([a * x[0] + b * u[0]]),
+        l=lambda t, x, u: 0.5 * (q * x[0] ** 2 + r * u[0] ** 2),
+        phi=lambda x: 0.5 * s * x[0] ** 2,
+        df_dx=lambda t, x, u: np.array([[a]]),
+        df_du=lambda t, x, u: np.array([[b]]),
+        dl_dx=lambda t, x, u: np.array([q * x[0]]),
+        dl_du=lambda t, x, u: np.array([r * u[0]]),
+        dphi_dx=lambda x: np.array([s * x[0]]),
+        t_span=(0.0, T),
+        x0=np.array([x0], dtype=float),
+        m=1,
+    )
+
+    def control_optimo_puntual(t: float, x: np.ndarray, p: np.ndarray) -> np.ndarray:
+        del t, x
+        return np.array([-b * p[0] / r])
+
+    problema.control_optimo_puntual = control_optimo_puntual
+    return problema
+
+
 def crear_problema_sir(
     beta: float,
     gamma: float,
@@ -17,6 +49,8 @@ def crear_problema_sir(
     h_riccati: float = 0.01,
 ) -> ControlProblem:
     """Crea un problema SIR con vacunación acotada y costo de infecciones."""
+    if B <= 0:
+        raise ValueError("B debe ser positivo.")
     del h_riccati  # Conserva la firma acordada; el modelo SIR no usa Riccati.
 
     def f(t: float, x: np.ndarray, u: np.ndarray) -> np.ndarray:

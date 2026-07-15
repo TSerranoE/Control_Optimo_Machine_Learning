@@ -40,6 +40,15 @@ def test_sir_box_constraint(sir_problema):
     np.testing.assert_allclose(sir_problema._conjunto.proyectar(np.array([1.0])), [0.4])
 
 
+@pytest.mark.parametrize("B", [0.0, -1.0])
+def test_sir_rejects_nonpositive_vaccination_cost(B):
+    with pytest.raises(ValueError, match="B.*positivo"):
+        crear_problema_sir(
+            beta=0.3, gamma=0.1, A=10.0, B=B, u_max=0.4,
+            S0=0.99, I0=0.01, T=50.0,
+        )
+
+
 @pytest.mark.slow
 def test_sir_nonnegative_states(sir_resultado):
     assert np.min(sir_resultado.estado[:, 0]) >= 0.0
