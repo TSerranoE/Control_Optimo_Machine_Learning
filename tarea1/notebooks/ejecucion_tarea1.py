@@ -39,7 +39,9 @@ import matplotlib
 import numpy as np
 
 # Backend no interactivo para ejecución por lotes.
-matplotlib.use("Agg")
+if "ipykernel" not in sys.modules:
+    matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 # El warning de fsolve sobre "no making good progress" es benigno para
 # campos lineales con pasos finos; la solución sigue convergiendo.
@@ -484,6 +486,12 @@ print(
     f"{resumen_problema3['3c']['control_medio_alto']:.6f} vs "
     f"{resumen_problema3['3c']['control_medio_bajo']:.6f}"
 )
+
+figuras_problema3 = resumen_problema3["figuras"]
+if "ipykernel" in sys.modules:
+    plt.show(block=False)
+for figura in figuras_problema3:
+    plt.close(figura)
 
 # %%
 for ruta in sorted(RUTA_PROBLEMA3.glob("*.png")):

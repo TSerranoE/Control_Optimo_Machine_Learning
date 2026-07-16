@@ -1,12 +1,14 @@
 """Generación reproducible de resultados y figuras del Problema 3."""
 
 from pathlib import Path
+import sys
 
 import matplotlib
 import numpy as np
 from scipy.integrate import solve_ivp
 
-matplotlib.use("Agg")
+if "ipykernel" not in sys.modules:
+    matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from metodos_optimizacion import fbsm
@@ -50,7 +52,6 @@ def _comparar_lqr(h: float):
 def _guardar(figura, ruta: Path) -> None:
     figura.tight_layout()
     figura.savefig(ruta, dpi=150, bbox_inches="tight")
-    plt.close(figura)
 
 
 def _resolver_sir(A: float, T: float, h: float, tol: float):
@@ -69,10 +70,12 @@ def generar_reporte_problema3(ruta_salida: Path, modo_rapido: bool = False) -> d
     """Ejecuta los experimentos 3a--3c y guarda sus cinco figuras.
 
     ``modo_rapido`` conserva las ecuaciones y parámetros físicos, pero acorta el
-    horizonte SIR para que las pruebas de humo no repitan el barrido costoso.
+    horizonte SIR para que las pruebas de humo no repitan el barrido costoso. El
+    resultado retiene las figuras para que el llamador pueda mostrarlas y cerrarlas.
     """
     ruta_salida = Path(ruta_salida)
     ruta_salida.mkdir(parents=True, exist_ok=True)
+    figuras = []
 
     hs = (0.1, 0.05, 0.025, 0.01)
     comparaciones = [_comparar_lqr(h) for h in hs]
@@ -89,6 +92,7 @@ def generar_reporte_problema3(ruta_salida: Path, modo_rapido: bool = False) -> d
     for eje in ejes:
         eje.grid(alpha=0.3)
     _guardar(figura, ruta_salida / "3a_fbsm_trayectorias.png")
+    figuras.append(figura)
 
     figura, eje = plt.subplots(figsize=(8, 4.5))
     eje.plot(tiempos, resultado_lqr.control_optimo[:, 0], label="FBSM")
@@ -97,12 +101,14 @@ def generar_reporte_problema3(ruta_salida: Path, modo_rapido: bool = False) -> d
     eje.grid(alpha=0.3)
     eje.legend()
     _guardar(figura, ruta_salida / "3b_fbsm_vs_riccati.png")
+    figuras.append(figura)
 
     figura, eje = plt.subplots(figsize=(7, 4.5))
     eje.loglog(hs, errores, "o-")
     eje.set(xlabel="Paso h", ylabel="Error L²", title="Error FBSM vs. Riccati")
     eje.grid(which="both", alpha=0.3)
     _guardar(figura, ruta_salida / "3b_error_l2_vs_h.png")
+    figuras.append(figura)
     print("Problema 3b — error en norma L²")
     for h, error in zip(hs, errores):
         print(f"h={h:0.3f}: {error:.8e}")
@@ -122,6 +128,7 @@ def generar_reporte_problema3(ruta_salida: Path, modo_rapido: bool = False) -> d
     for eje in ejes:
         eje.grid(alpha=0.3)
     _guardar(figura, ruta_salida / "3c_sir_trayectorias.png")
+    figuras.append(figura)
 
     figura, eje = plt.subplots(figsize=(8, 4.5))
     eje.plot(tiempos_sir, sir_alto.control_optimo[:, 0], label="A/B = 10")
@@ -130,8 +137,10 @@ def generar_reporte_problema3(ruta_salida: Path, modo_rapido: bool = False) -> d
     eje.grid(alpha=0.3)
     eje.legend()
     _guardar(figura, ruta_salida / "3c_sir_comparacion_ab.png")
+    figuras.append(figura)
 
     return {
+        "figuras": figuras,
         "3a": {
             "convergio": resultado_lqr.convergio,
             "iteraciones": resultado_lqr.iteraciones,
