@@ -34,7 +34,7 @@ def _integrar_adjunto_atras(
     h: float,
     metodo: str,
 ) -> np.ndarray:
-    """Integra el costado hacia atrás usando ``τ = T - t`` y ``EDOSolver``."""
+    """Integra el estado adjunto hacia atrás usando ``τ = tf - t`` y ``EDOSolver``."""
     t0 = tiempos[0]
     T = tiempos[-1] - t0
 

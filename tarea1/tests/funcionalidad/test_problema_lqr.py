@@ -52,22 +52,32 @@ class TestProblemaLQR:
         esperado = _p_escalar_analitico(0.5)
         assert P_media[0, 0] == pytest.approx(esperado, abs=1e-4)
 
-    def test_lqr_control_optimo_matches_analytical(self, scalar_lqr_problem):
-        """El control óptimo puntual debe coincidir con ``-R^{-1} B^T P(t) x``."""
+    def test_lqr_control_optimo_puntual_depende_del_adjunto(self, scalar_lqr_problem):
+        """El control puntual debe ser el argmin Hamiltoniano dependiente de p."""
         problema = scalar_lqr_problem
         t = 0.5
         x = np.array([2.0])
+        p = np.array([3.0])
 
-        u_opt = problema.control_optimo_puntual(t, x, np.array([0.0]))
+        u_opt = problema.control_optimo_puntual(t, x, p)
 
-        P_t = _p_escalar_analitico(t)
-        esperado = -P_t * x[0]
+        np.testing.assert_allclose(u_opt, [-3.0])
+        assert problema.hamiltoniano(t, x, p, u_opt) < problema.hamiltoniano(
+            t, x, p, u_opt + 0.1
+        )
 
-        assert u_opt.shape == (1,)
-        assert u_opt[0] == pytest.approx(esperado, abs=1e-4)
+    def test_lqr_control_riccati_matches_analytical(self, scalar_lqr_problem):
+        """La realimentación Riccati debe coincidir con ``-R^{-1} B^T P(t) x``."""
+        t = 0.5
+        x = np.array([2.0])
 
-    def test_lqr_control_optimo_projects_box(self):
-        """El control óptimo analítico debe proyectarse sobre la caja."""
+        u_opt = scalar_lqr_problem.control_riccati(t, x)
+
+        esperado = -_p_escalar_analitico(t) * x[0]
+        np.testing.assert_allclose(u_opt, [esperado], atol=1e-4)
+
+    def test_lqr_controles_proyectan_sobre_caja(self):
+        """Los controles puntual y Riccati deben proyectarse sobre la caja."""
         from problemas_control import ConjuntoAdmisible
 
         problema = ProblemaLQR(
@@ -84,6 +94,29 @@ class TestProblemaLQR:
 
         # x grande genera un control libre fuera de [-1, 1]
         x = np.array([10.0])
-        u_opt = problema.control_optimo_puntual(0.5, x, np.array([0.0]))
+        u_riccati = problema.control_riccati(0.5, x)
+        u_puntual = problema.control_optimo_puntual(0.5, x, np.array([10.0]))
 
-        assert u_opt[0] == pytest.approx(-1.0, abs=1e-8)
+        np.testing.assert_allclose(u_riccati, [-1.0])
+        np.testing.assert_allclose(u_puntual, [-1.0])
+
+    def test_lqr_riccati_admite_intervalo_con_t0_no_nulo(self):
+        """P(t) debe interpolarse en tiempos absolutos para ``t_span=(2, 3)``."""
+        problema = ProblemaLQR(
+            A=np.array([[1.0]]),
+            B=np.array([[1.0]]),
+            Q=np.array([[1.0]]),
+            R=np.array([[1.0]]),
+            S=np.array([[1.0]]),
+            t_span=(2.0, 3.0),
+            x0=np.array([1.0]),
+            h=1e-4,
+        )
+
+        for t in (2.0, 2.5, 3.0):
+            esperado = -_p_escalar_analitico(t, T=3.0)
+            np.testing.assert_allclose(
+                problema.control_riccati(t, np.array([1.0])),
+                [esperado],
+                atol=1e-4,
+            )

@@ -31,7 +31,7 @@ def _comparar_lqr(h: float):
     )
 
     def lazo_cerrado(t, x):
-        u = referencia.control_optimo_puntual(t, x, np.zeros(1))
+        u = referencia.control_riccati(t, x)
         return referencia._f(t, x, u)
 
     estado_ref = solve_ivp(
@@ -39,7 +39,7 @@ def _comparar_lqr(h: float):
         rtol=1e-11, atol=1e-13,
     ).y.T
     control_ref = np.array([
-        referencia.control_optimo_puntual(t, x, np.zeros(1))
+        referencia.control_riccati(t, x)
         for t, x in zip(tiempos, estado_ref)
     ])
     error = np.sqrt(np.trapezoid(

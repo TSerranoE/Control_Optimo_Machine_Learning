@@ -71,7 +71,7 @@ def campo_lotka_volterra(t, x, u, parametros):
     t : float
         Tiempo actual (no aparece explícitamente en el campo autónomo).
     x : array-like
-        Estado ``[presas, depredadores]``.
+        Estado del sistema, shape (2,).
     u : callable, np.ndarray or None
         Control. Si es callable se evalúa en ``t``.
     parametros : dict

@@ -14,7 +14,7 @@ from problemas_control import ConjuntoAdmisible, ProblemaLQR
 def lqr_scalar_problem():
     """Problema LQR escalar usado para validar FBSM."""
     return ProblemaLQR(
-        A=np.array([[1.0]]),
+        A=np.array([[-1.0]]),
         B=np.array([[1.0]]),
         Q=np.array([[1.0]]),
         R=np.array([[1.0]]),
