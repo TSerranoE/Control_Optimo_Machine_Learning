@@ -7,6 +7,7 @@ Este módulo implementa las clases del Problema 2 de la tarea:
 """
 
 from collections.abc import Callable
+from dataclasses import dataclass
 
 import numpy as np
 from scipy.interpolate import interp1d
@@ -95,6 +96,27 @@ class ConjuntoAdmisible:
             Tupla de límites o ``None`` si es irrestricto.
         """
         return self._limites
+
+
+@dataclass(frozen=True)
+class ResultadoGradienteProyectado:
+    """Resultado inmutable del método de gradiente proyectado."""
+
+    control: np.ndarray
+    estados: np.ndarray
+    adjuntos: np.ndarray
+    historial_costos: tuple[float, ...]
+    iteraciones: int
+    convergio: bool
+
+    def __post_init__(self):
+        for nombre in ("control", "estados", "adjuntos"):
+            copia = np.array(getattr(self, nombre), dtype=float, copy=True)
+            copia.setflags(write=False)
+            object.__setattr__(self, nombre, copia)
+        object.__setattr__(
+            self, "historial_costos", tuple(float(c) for c in self.historial_costos)
+        )
 
 
 class ControlProblem:
@@ -464,27 +486,34 @@ class ControlProblem:
     ) -> float:
         """Evalúa el costo con cuadratura consistente con el método."""
         control, h = self._normalizar_control(u, metodo_integracion)
+        if metodo_integracion == "rk4":
+            tiempos = np.linspace(self._t0, self._t_span[1], control.shape[0])
+            control_interpolado = interp1d(tiempos, control, axis=0, kind="linear")
+
+            def sistema_aumentado(t, estado, control_t):
+                x = estado[: self._n]
+                return np.concatenate(
+                    (self._f(t, x, control_t), [self._l(t, x, control_t)])
+                )
+
+            estado_inicial = np.concatenate((self._x0, [0.0]))
+            solucion = self._solver.solve(
+                sistema_aumentado,
+                estado_inicial,
+                self._t_span,
+                h,
+                method="rk4",
+                u=control_interpolado,
+            )
+            estado_final = solucion.estados[-1]
+            return float(estado_final[-1] + self._phi(estado_final[: self._n]))
+
         tiempos, estados = self._integrar_estado(control, h, metodo_integracion)
         valores = np.array(
             [self._l(t, x, c) for t, x, c in zip(tiempos, estados, control)],
             dtype=float,
         )
-        valores_medios = None
-        if metodo_integracion == "rk4":
-            valores_medios = np.array(
-                [
-                    self._l(
-                        (tiempos[k] + tiempos[k + 1]) / 2.0,
-                        (estados[k] + estados[k + 1]) / 2.0,
-                        (control[k] + control[k + 1]) / 2.0,
-                    )
-                    for k in range(len(tiempos) - 1)
-                ],
-                dtype=float,
-            )
-        integral = self._integrar_valores(
-            valores, h, metodo_integracion, valores_medios
-        )
+        integral = self._integrar_valores(valores, h, metodo_integracion)
         return float(integral + self._phi(estados[-1]))
 
     def grad(self, u: np.ndarray, metodo_integracion: str) -> np.ndarray:
@@ -605,6 +634,96 @@ class ControlProblem:
             if reduccion < max_reducciones:
                 paso *= b
         raise RuntimeError("El backtracking agotó las reducciones permitidas.")
+
+    def gradiente_proyectado(
+        self,
+        u_inicial,
+        max_iter,
+        tolerancia,
+        metodo_integracion,
+        *,
+        r=10,
+        a=1e-4,
+        b=0.5,
+        t_min=1e-12,
+        max_reducciones=50,
+    ) -> ResultadoGradienteProyectado:
+        """Minimiza el costo mediante gradiente proyectado y búsqueda Armijo."""
+        control, h = self._normalizar_control(u_inicial, metodo_integracion)
+        if isinstance(max_iter, bool) or not isinstance(max_iter, int) or max_iter < 1:
+            raise ValueError("max_iter debe ser un entero positivo.")
+        if not np.isfinite(tolerancia) or tolerancia < 0.0:
+            raise ValueError("tolerancia debe ser finita y no negativa.")
+        if isinstance(r, bool) or not isinstance(r, int) or r < 1:
+            raise ValueError("r debe ser un entero positivo.")
+        if not 0.0 < a < 1.0 or not 0.0 < b < 1.0:
+            raise ValueError("a y b deben pertenecer a (0, 1).")
+        if not np.isfinite(t_min) or not 0.0 < t_min <= 1.0:
+            raise ValueError("t_min debe pertenecer a (0, 1].")
+        if (
+            isinstance(max_reducciones, bool)
+            or not isinstance(max_reducciones, int)
+            or max_reducciones < 1
+        ):
+            raise ValueError("max_reducciones debe ser un entero positivo.")
+
+        costo_anterior = self._evaluar_costo_nodal(control, metodo_integracion)
+        historial = [costo_anterior]
+        control_anterior = gradiente_anterior = None
+        convergio = False
+
+        for iteraciones in range(1, max_iter + 1):
+            gradiente = self.grad(control, metodo_integracion)
+            direccion = self.proj(
+                control - gradiente, metodo_integracion
+            ) - control
+            semilla = 1
+            if control_anterior is not None:
+                semilla = min(
+                    1,
+                    self.BBStep(
+                        control_anterior,
+                        control,
+                        gradiente_anterior,
+                        gradiente,
+                        metodo_integracion,
+                        t_min=t_min,
+                    ),
+                )
+            paso = self.backtracking(
+                control,
+                gradiente,
+                direccion,
+                a,
+                b,
+                max(historial[-r:]),
+                metodo_integracion,
+                t_inicial=semilla,
+                max_reducciones=max_reducciones,
+            )
+            nuevo_control = control + paso * direccion
+            nuevo_costo = self._evaluar_costo_nodal(
+                nuevo_control, metodo_integracion
+            )
+            historial.append(nuevo_costo)
+            control_anterior, gradiente_anterior = control, gradiente
+            control = nuevo_control
+            cambio_relativo = abs(nuevo_costo - costo_anterior) / max(
+                1.0, abs(costo_anterior)
+            )
+            costo_anterior = nuevo_costo
+            if cambio_relativo <= tolerancia:
+                convergio = True
+                break
+
+        tiempos, estados = self._integrar_estado(control, h, metodo_integracion)
+        adjuntos = self._integrar_adjunto(
+            tiempos, estados, control, h, metodo_integracion
+        )
+        historial[-1] = self._evaluar_costo_nodal(control, metodo_integracion)
+        return ResultadoGradienteProyectado(
+            control, estados, adjuntos, tuple(historial), iteraciones, convergio
+        )
 
     def control_optimo_puntual(
         self, t: float, x: np.ndarray, p: np.ndarray
