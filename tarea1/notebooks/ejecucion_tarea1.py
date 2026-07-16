@@ -33,6 +33,7 @@ from pathlib import Path
 
 # Permite imports absolutos tanto en Jupyter como al ejecutar el script.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import matplotlib
 import numpy as np
@@ -425,4 +426,65 @@ fig_fase_vdp_stiff = graficar_diagrama_fase(
 for ruta in sorted(RUTA_LOTKA.glob("*.png")):
     print(ruta)
 for ruta in sorted(RUTA_VDP.glob("*.png")):
+    print(ruta)
+
+# %% [markdown]
+# ## Problema 3a - Barrido hacia adelante y hacia atrás
+#
+# El método FBSM parte de $u^{(0)}=0$ y alterna la integración directa del
+# estado, la integración hacia atrás del adjunto y la minimización puntual del
+# Hamiltoniano. La actualización relajada usa
+# $u^{(k+1)}=(1-\omega)u^{(k)}+\omega\widetilde u$ y se detiene cuando el cambio
+# relativo de $J$ cae bajo la tolerancia. Ejecutamos la API implementada con el
+# LQR escalar y mostramos $x(t)$, $u^*(t)$ y la historia de costo.
+
+# %% [markdown]
+# ## Problema 3b - Validación independiente mediante Riccati
+#
+# Para $\dot x=ax+bu$ y
+# $J=\frac12 s x(T)^2+\frac12\int_0^T(qx^2+ru^2)\,dt$, la condición de
+# estacionariedad entrega $u^*=-(b/r)p$. Al proponer $p(t)=P(t)x(t)$ se obtiene
+#
+# $$-\dot{P}=2aP-\frac{b^2}{r}P^2+q,\qquad P(T)=s.$$
+#
+# Si $d=\sqrt{a^2+b^2q/r}$ y
+# $P_\pm=\frac{r}{b^2}(a\pm d)$, la solución analítica queda determinada por
+#
+# $$\frac{P(t)-P_+}{P(t)-P_-}
+# =\frac{s-P_+}{s-P_-}\exp\!\left(2d(t-T)\right).$$
+#
+# La referencia `ProblemaLQR` integra esta Riccati independientemente. El lado
+# FBSM usa un `ControlProblem` genérico cuyo minimizador depende del adjunto;
+# así la comparación no reutiliza la solución de referencia. Se reporta el
+# error en norma $L^2$ para varios pasos $h$ y se grafica en escala log-log.
+
+# %% [markdown]
+# ## Problema 3c - Vacunación óptima en el modelo SIR
+#
+# Se resuelve $\dot S=-\beta SI-uS$, $\dot I=\beta SI-\gamma I$ con
+# $u\in[0,0.4]$ y costo $\int(AI+Bu^2/2)dt$. Para este problema no lineal se
+# usa Crank-Nicolson y relajación fija `omega=0.2`, valor validado para evitar
+# el ciclo de dos puntos que presenta la relajación general 0.99. Comparamos
+# $A/B=10$ y $A/B=1$: penalizar más las infecciones debe aumentar la vacunación.
+
+# %%
+from src.reporte_problema3 import generar_reporte_problema3
+
+RUTA_PROBLEMA3 = RUTA_BASE / "3_fbsm"
+MODO_RAPIDO_PROBLEMA3 = os.getenv("TAREA1_REPORTE_RAPIDO") == "1"
+resumen_problema3 = generar_reporte_problema3(
+    RUTA_PROBLEMA3, modo_rapido=MODO_RAPIDO_PROBLEMA3
+)
+
+print("\nResumen del Problema 3")
+print(f"3a: {resumen_problema3['3a']}")
+print(f"3b: error L²(h=0.01) = {resumen_problema3['3b']['error_h_001']:.8e}")
+print(
+    "3c: control medio A/B=10 vs A/B=1 = "
+    f"{resumen_problema3['3c']['control_medio_alto']:.6f} vs "
+    f"{resumen_problema3['3c']['control_medio_bajo']:.6f}"
+)
+
+# %%
+for ruta in sorted(RUTA_PROBLEMA3.glob("*.png")):
     print(ruta)
