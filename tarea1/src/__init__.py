@@ -5,6 +5,6 @@ curso MA6914: integradores de EDO, formulación de problemas de control óptimo
 y métodos de optimización asociados.
 """
 
-from .problemas_control import ConjuntoAdmisible, ControlProblem, ProblemaLQR
+from .problemas_control import ConjuntoAdmisible, ControlProblem, ProblemaLQR, ResultadoGradienteProyectado
 
-__all__ = ["ConjuntoAdmisible", "ControlProblem", "ProblemaLQR"]
+__all__ = ["ConjuntoAdmisible", "ControlProblem", "ProblemaLQR", "ResultadoGradienteProyectado"]
