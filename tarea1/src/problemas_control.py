@@ -124,8 +124,7 @@ class ControlProblem:
 
     La dinámica está dada por ``dx/dt = f(t, x, u)``, el costo de operación por
     ``l(t, x, u)`` y el costo terminal por ``phi(x)``. Las cinco derivadas
-    parciales requeridas se proveen de forma analítica en el constructor; no
-    existe fallback por diferencias finitas.
+    parciales requeridas se proveen de forma analítica en el constructor.
 
     Parameters
     ----------
@@ -925,7 +924,7 @@ class ProblemaLQR(ControlProblem):
         """Devuelve el control óptimo analítico vía Riccati.
 
         El argumento ``p`` no se utiliza porque la solución Riccati ya incorpora
-        el costado a través de ``P(t)``.
+        el estado adjunto a través de ``P(t)``.
 
         Parameters
         ----------
@@ -934,7 +933,7 @@ class ProblemaLQR(ControlProblem):
         x : np.ndarray
             Estado, shape ``(n,)``.
         p : np.ndarray
-            Costado (no utilizado en la fórmula Riccati).
+            Estado adjunto (no utilizado en la fórmula Riccati).
 
         Returns
         -------
