@@ -8,9 +8,7 @@ problemas de control óptimo, incluyendo el Forward-Backward Sweep Method
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.interpolate import interp1d
 
-from integradores import EDOSolver
 from problemas_control import ControlProblem
 
 
@@ -68,40 +66,10 @@ def _integrar_adjunto_atras(
     metodo: str,
 ) -> np.ndarray:
     """Integra el adjunto con los pasos efectivos invertidos en ``τ = tf - t``."""
-    t0 = tiempos[0]
-    T = tiempos[-1] - t0
-
-    x_interp = interp1d(
-        tiempos, x_traj, axis=0, kind="linear", fill_value="extrapolate"
-    )
-    u_interp = interp1d(
-        tiempos, u_traj, axis=0, kind="linear", fill_value="extrapolate"
-    )
-
-    def dp_dtau(tau: float, p: np.ndarray, _u=None) -> np.ndarray:
-        t = T - tau + t0
-        x_t = np.asarray(x_interp(t), dtype=float)
-        u_t = np.asarray(u_interp(t), dtype=float)
-        # sistema_adjunto retorna -∂H/∂x = dp/dt;
-        # dp/dτ = -dp/dt = +∂H/∂x
-        return -problema.sistema_adjunto(t, x_t, p, u_t)
-
-    p_terminal = np.asarray(
-        problema.condicion_transversalidad(x_traj[-1]), dtype=float
-    )
-
     pasos = np.asarray(h, dtype=float)
     if pasos.ndim == 0:
         pasos = np.diff(tiempos)
-    pasos_reversos = pasos[::-1]
-    tiempos_tau = np.concatenate(([0.0], np.cumsum(pasos_reversos)))
-    tiempos_tau[-1] = T
-    solver = EDOSolver()
-    sol = solver.solve(
-        dp_dtau, p_terminal, tuple(tiempos_tau), pasos_reversos, method=metodo
-    )
-
-    return sol.estados[::-1]
+    return problema.integrar_adjunto(tiempos, x_traj, u_traj, pasos, metodo)
 
 
 def fbsm(
@@ -121,32 +89,20 @@ def fbsm(
     if not 0 < omega <= 1:
         raise ValueError("omega debe pertenecer a (0, 1].")
 
-    tiempos, pasos = _normalizar_grilla_fbsm(problema._t_span, h)
+    tiempos, pasos = _normalizar_grilla_fbsm(problema.t_span, h)
     numero_pasos = len(pasos)
     u_actual = np.asarray(u_inicial, dtype=float).copy()
-    shape_esperada = (numero_pasos + 1, problema._m)
+    shape_esperada = (numero_pasos + 1, problema.dimension_control)
     if u_actual.shape != shape_esperada:
         raise ValueError(f"u_inicial debe tener shape {shape_esperada}.")
 
-    def control_interpolado(u_traj: np.ndarray):
-        interpolador = interp1d(tiempos, u_traj, axis=0, kind="linear")
-        return lambda t: np.asarray(interpolador(t), dtype=float)
-
-    def control_para_solver(u_traj: np.ndarray):
-        if metodo_integracion == "rk4":
-            return control_interpolado(u_traj)
-        return u_traj
-
     def integrar_estado(u_traj: np.ndarray) -> np.ndarray:
-        solucion = problema._solver.solve(
-            problema._f,
-            problema._x0,
-            tuple(tiempos),
+        _, estados = problema.integrar_estado(
+            u_traj,
             pasos,
-            method=metodo_integracion,
-            u=control_para_solver(u_traj),
+            metodo_integracion,
         )
-        return solucion.estados
+        return estados
 
     historia_costo: list[float] = []
     costo_anterior: float | None = None
@@ -165,19 +121,11 @@ def fbsm(
             dtype=float,
         )
         u_nuevo = (1.0 - omega) * u_actual + omega * u_puntual
-        if problema._conjunto is not None:
-            u_nuevo = np.array([problema._conjunto.proyectar(u) for u in u_nuevo])
+        u_nuevo = problema.proyectar_control(u_nuevo)
 
         estado_nuevo = integrar_estado(u_nuevo)
-        costos_nodales = np.array(
-            [
-                problema._l(t, x, u)
-                for t, x, u in zip(tiempos, estado_nuevo, u_nuevo)
-            ],
-            dtype=float,
-        )
-        costo_nuevo = float(
-            np.trapezoid(costos_nodales, tiempos) + problema._phi(estado_nuevo[-1])
+        costo_nuevo = problema.evaluar_costo_trayectoria(
+            tiempos, estado_nuevo, u_nuevo
         )
         historia_costo.append(costo_nuevo)
         if costo_anterior is not None:
