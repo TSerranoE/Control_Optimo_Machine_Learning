@@ -334,6 +334,14 @@ class ControlProblem:
         x_T = np.asarray(x_T, dtype=float)
         return np.asarray(self._dphi_dx(x_T))
 
+    def gradiente_hamiltoniano_control(
+        self, t: float, x: np.ndarray, p: np.ndarray, u: np.ndarray
+    ) -> np.ndarray:
+        """Evalúa ``∂H/∂u`` sin exponer las derivadas que lo componen."""
+        return np.asarray(self._dl_du(t, x, u), dtype=float) + np.asarray(
+            self._df_du(t, x, u), dtype=float
+        ).T @ p
+
     def proyectar_control(self, u: np.ndarray) -> np.ndarray:
         """Proyecta uno o más controles sobre el conjunto admisible."""
         control = np.asarray(u, dtype=float)
@@ -619,52 +627,47 @@ class ControlProblem:
         integral = self._integrar_valores(valores, h, metodo_integracion)
         return float(integral + self._phi(estados[-1]))
 
+    def evaluar_costo_nodal(self, u: np.ndarray, metodo_integracion: str) -> float:
+        """Evalúa el costo de un control nodal con cuadratura consistente."""
+        return self._evaluar_costo_nodal(u, metodo_integracion)
+
     def grad(self, u: np.ndarray, metodo_integracion: str) -> np.ndarray:
-        """Calcula el gradiente reducido mediante el adjunto continuo."""
-        control, h = self._normalizar_control(u, metodo_integracion)
-        tiempos, estados = self._integrar_estado(control, h, metodo_integracion)
-        adjuntos = self._integrar_adjunto(
-            tiempos, estados, control, h, metodo_integracion
-        )
-        return np.array(
-            [
-                np.asarray(self._dl_du(t, x, c), dtype=float)
-                + np.asarray(self._df_du(t, x, c), dtype=float).T @ p
-                for t, x, c, p in zip(tiempos, estados, control, adjuntos)
-            ],
-            dtype=float,
-        )
+        """Delega el gradiente reducido en el módulo de optimización."""
+        if __package__:
+            from .metodos_optimizacion import grad
+        else:
+            from metodos_optimizacion import grad
+
+        return grad(self, u, metodo_integracion)
 
     def L2InnerProd(
         self, u_1: np.ndarray, u_2: np.ndarray, metodo_integracion: str
     ) -> float:
-        """Calcula el producto interno L2 con cuadratura según el método."""
-        primero, h = self._normalizar_control(u_1, metodo_integracion)
-        segundo, _ = self._normalizar_control(u_2, metodo_integracion)
-        if primero.shape != segundo.shape:
-            raise ValueError("Los controles deben tener el mismo shape.")
+        """Delega el producto interno L2 en el módulo de optimización."""
+        if __package__:
+            from .metodos_optimizacion import L2InnerProd
+        else:
+            from metodos_optimizacion import L2InnerProd
 
-        valores = np.einsum("ij,ij->i", primero, segundo)
-        valores_medios = None
-        if metodo_integracion == "rk4":
-            primero_medio = (primero[:-1] + primero[1:]) / 2.0
-            segundo_medio = (segundo[:-1] + segundo[1:]) / 2.0
-            valores_medios = np.einsum("ij,ij->i", primero_medio, segundo_medio)
-        return self._integrar_valores(
-            valores, h, metodo_integracion, valores_medios
-        )
+        return L2InnerProd(self, u_1, u_2, metodo_integracion)
 
     def L2Norm(self, u: np.ndarray, metodo_integracion: str) -> float:
-        """Calcula la norma inducida por ``L2InnerProd``."""
-        producto = self.L2InnerProd(u, u, metodo_integracion)
-        return float(np.sqrt(max(0.0, producto)))
+        """Delega la norma L2 en el módulo de optimización."""
+        if __package__:
+            from .metodos_optimizacion import L2Norm
+        else:
+            from metodos_optimizacion import L2Norm
+
+        return L2Norm(self, u, metodo_integracion)
 
     def proj(self, u: np.ndarray, metodo_integracion: str) -> np.ndarray:
-        """Proyecta un control nodal punto a punto sobre el conjunto admisible."""
-        control, _ = self._normalizar_control(u, metodo_integracion)
-        if self._conjunto is None:
-            return control
-        return np.array([self._conjunto.proyectar(nodo) for nodo in control])
+        """Delega la proyección nodal en el módulo de optimización."""
+        if __package__:
+            from .metodos_optimizacion import proj
+        else:
+            from metodos_optimizacion import proj
+
+        return proj(self, u, metodo_integracion)
 
     def BBStep(
         self,
@@ -676,27 +679,15 @@ class ControlProblem:
         *,
         t_min: float = 1e-12,
     ) -> float:
-        """Calcula el paso espectral BB con salvaguardas."""
-        if not np.isfinite(t_min) or not 0.0 < t_min <= 1.0:
-            raise ValueError("t_min debe pertenecer a (0, 1].")
-        controles = [
-            self._normalizar_control(valor, metodo_integracion)[0]
-            for valor in (u_1, u_2, g_1, g_2)
-        ]
-        if len({valor.shape for valor in controles}) != 1:
-            raise ValueError("Los controles y gradientes deben tener el mismo shape.")
+        """Delega el paso espectral BB en el módulo de optimización."""
+        if __package__:
+            from .metodos_optimizacion import BBStep
+        else:
+            from metodos_optimizacion import BBStep
 
-        s = controles[1] - controles[0]
-        y = controles[3] - controles[2]
-        numerador = self.L2InnerProd(s, s, metodo_integracion)
-        denominador = self.L2InnerProd(s, y, metodo_integracion)
-        umbral = np.finfo(float).eps * abs(numerador)
-        if not np.isfinite(denominador) or denominador <= umbral:
-            return 1.0
-        paso = numerador / denominador
-        if not np.isfinite(paso) or paso <= 0.0:
-            return 1.0
-        return float(np.clip(paso, t_min, 1.0))
+        return BBStep(
+            self, u_1, u_2, g_1, g_2, metodo_integracion, t_min=t_min
+        )
 
     def backtracking(
         self,
@@ -711,32 +702,24 @@ class ControlProblem:
         *,
         max_reducciones: int = 50,
     ) -> float:
-        """Busca un paso que satisfaga Armijo no monótono."""
-        if not 0.0 < a < 1.0 or not 0.0 < b < 1.0:
-            raise ValueError("a y b deben pertenecer a (0, 1).")
-        if not np.isfinite(J_hat):
-            raise ValueError("J_hat debe ser finito.")
-        if not np.isfinite(t_inicial) or t_inicial <= 0.0:
-            raise ValueError("t_inicial debe ser positivo y finito.")
-        if not isinstance(max_reducciones, int) or max_reducciones < 1:
-            raise ValueError("max_reducciones debe ser un entero positivo.")
+        """Delega la búsqueda Armijo en el módulo de optimización."""
+        if __package__:
+            from .metodos_optimizacion import backtracking
+        else:
+            from metodos_optimizacion import backtracking
 
-        control, _ = self._normalizar_control(u, metodo_integracion)
-        gradiente, _ = self._normalizar_control(g, metodo_integracion)
-        direccion, _ = self._normalizar_control(v, metodo_integracion)
-        if control.shape != gradiente.shape or control.shape != direccion.shape:
-            raise ValueError("u, g y v deben tener el mismo shape.")
-
-        producto = self.L2InnerProd(gradiente, direccion, metodo_integracion)
-        paso = float(t_inicial)
-        for reduccion in range(max_reducciones + 1):
-            candidato = control + paso * direccion
-            costo = self._evaluar_costo_nodal(candidato, metodo_integracion)
-            if costo <= J_hat + a * paso * producto:
-                return paso
-            if reduccion < max_reducciones:
-                paso *= b
-        raise RuntimeError("El backtracking agotó las reducciones permitidas.")
+        return backtracking(
+            self,
+            u,
+            g,
+            v,
+            a,
+            b,
+            J_hat,
+            metodo_integracion,
+            t_inicial,
+            max_reducciones=max_reducciones,
+        )
 
     def gradiente_proyectado(
         self,
@@ -751,81 +734,23 @@ class ControlProblem:
         t_min=1e-12,
         max_reducciones=50,
     ) -> ResultadoGradienteProyectado:
-        """Minimiza el costo mediante gradiente proyectado y búsqueda Armijo."""
-        control, h = self._normalizar_control(u_inicial, metodo_integracion)
-        if isinstance(max_iter, bool) or not isinstance(max_iter, int) or max_iter < 1:
-            raise ValueError("max_iter debe ser un entero positivo.")
-        if not np.isfinite(tolerancia) or tolerancia < 0.0:
-            raise ValueError("tolerancia debe ser finita y no negativa.")
-        if isinstance(r, bool) or not isinstance(r, int) or r < 1:
-            raise ValueError("r debe ser un entero positivo.")
-        if not 0.0 < a < 1.0 or not 0.0 < b < 1.0:
-            raise ValueError("a y b deben pertenecer a (0, 1).")
-        if not np.isfinite(t_min) or not 0.0 < t_min <= 1.0:
-            raise ValueError("t_min debe pertenecer a (0, 1].")
-        if (
-            isinstance(max_reducciones, bool)
-            or not isinstance(max_reducciones, int)
-            or max_reducciones < 1
-        ):
-            raise ValueError("max_reducciones debe ser un entero positivo.")
+        """Delega el gradiente proyectado en el módulo de optimización."""
+        if __package__:
+            from .metodos_optimizacion import gradiente_proyectado
+        else:
+            from metodos_optimizacion import gradiente_proyectado
 
-        costo_anterior = self._evaluar_costo_nodal(control, metodo_integracion)
-        historial = [costo_anterior]
-        control_anterior = gradiente_anterior = None
-        convergio = False
-
-        for iteraciones in range(1, max_iter + 1):
-            gradiente = self.grad(control, metodo_integracion)
-            direccion = self.proj(
-                control - gradiente, metodo_integracion
-            ) - control
-            semilla = 1
-            if control_anterior is not None:
-                semilla = min(
-                    1,
-                    self.BBStep(
-                        control_anterior,
-                        control,
-                        gradiente_anterior,
-                        gradiente,
-                        metodo_integracion,
-                        t_min=t_min,
-                    ),
-                )
-            paso = self.backtracking(
-                control,
-                gradiente,
-                direccion,
-                a,
-                b,
-                max(historial[-r:]),
-                metodo_integracion,
-                t_inicial=semilla,
-                max_reducciones=max_reducciones,
-            )
-            nuevo_control = control + paso * direccion
-            nuevo_costo = self._evaluar_costo_nodal(
-                nuevo_control, metodo_integracion
-            )
-            historial.append(nuevo_costo)
-            control_anterior, gradiente_anterior = control, gradiente
-            control = nuevo_control
-            cambio_relativo = abs(nuevo_costo - costo_anterior) / max(
-                1.0, abs(costo_anterior)
-            )
-            costo_anterior = nuevo_costo
-            if cambio_relativo <= tolerancia:
-                convergio = True
-                break
-
-        tiempos, estados = self._integrar_estado(control, h, metodo_integracion)
-        adjuntos = self._integrar_adjunto(
-            tiempos, estados, control, h, metodo_integracion
-        )
-        historial[-1] = self._evaluar_costo_nodal(control, metodo_integracion)
-        return ResultadoGradienteProyectado(
-            control, estados, adjuntos, tuple(historial), iteraciones, convergio
+        return gradiente_proyectado(
+            self,
+            u_inicial,
+            max_iter,
+            tolerancia,
+            metodo_integracion,
+            r=r,
+            a=a,
+            b=b,
+            t_min=t_min,
+            max_reducciones=max_reducciones,
         )
 
     def fbsm(
