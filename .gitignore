@@ -70,4 +70,7 @@ Tarea_2.pdf
 *.csv
 *.txt
 
+# Excepción: gráficos de resultados versionados
+!tarea1/resultados_graficos/**/*.png
+
 
