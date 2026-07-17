@@ -1,6 +1,8 @@
 from dataclasses import FrozenInstanceError
 from pathlib import Path
+from types import SimpleNamespace
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
@@ -57,12 +59,6 @@ def test_validation_report_boundary_rejects_invalid_output_before_runner(
 
     with pytest.raises(ValueError, match=mensaje):
         reporte.generar_reporte_problema4(destino, modo_rapido=True)
-
-
-def test_contract_valid_boundary_fails_safely_until_pr2_runner(tmp_path):
-    with pytest.raises(NotImplementedError, match="PR2"):
-        reporte.generar_reporte_problema4(tmp_path / "report", modo_rapido=True)
-    assert not (tmp_path / "report").exists()
 
 
 @pytest.mark.parametrize(
@@ -168,9 +164,11 @@ def test_control_riccati_uses_reference_feedback():
     class Reference:
         control_riccati = staticmethod(lambda t, x: np.array([t + x[0]]))
         control_optimo_puntual = staticmethod(lambda *args: pytest.fail("pointwise control used"))
+        _f = staticmethod(lambda t, x, u: x + u)
 
     control = reporte._control_riccati(Reference(), np.array([0.0, 1.0]), np.array([[2.0], [3.0]]))
     np.testing.assert_allclose(control, [[2.0], [4.0]])
+    np.testing.assert_allclose(reporte._dinamica_riccati(Reference(), 1.0, np.array([3.0])), [7.0])
 
 
 @pytest.mark.parametrize("tiempos", [[1.0, 0.5, 0.0], [0.0, 0.0, 1.0], [0.0, np.nan, 1.0]])
@@ -205,3 +203,130 @@ def test_metric_native_labels_order_and_exploratory_solver_timing(monkeypatch):
     control[0, 0] = 9.0
     assert filas[0].control[0, 0] == 0.0
     assert not filas[0].control.flags.writeable
+
+
+class _RunnerProblem(_BoxProblem):
+    def __init__(self):
+        self.projected_calls = []
+
+    def evaluar_costo(self, control, h, metodo_integracion):
+        return float(np.sum(np.asarray(control)) + h)
+
+    def gradiente_proyectado(self, control, **kwargs):
+        self.projected_calls.append((control.copy(), kwargs))
+        return SimpleNamespace(
+            control=np.full_like(control, 0.25),
+            estados=np.zeros((len(control), 1)),
+            adjuntos=np.zeros((len(control), 1)),
+            iteraciones=4,
+            convergio=True,
+        )
+
+
+def test_runner_uses_fresh_zero_controls_and_native_solver_settings(monkeypatch):
+    problema = _RunnerProblem()
+    fbsm_calls = []
+
+    def fake_fbsm(problem, control, h, method, **kwargs):
+        fbsm_calls.append((problem, control.copy(), h, method, kwargs))
+        control[:] = 9.0
+        return SimpleNamespace(
+            control_optimo=np.full_like(control, 0.5),
+            estado=np.zeros((len(control), 1)),
+            adjunto=np.zeros((len(control), 1)),
+            iteraciones=3,
+            convergio=False,
+        )
+
+    monkeypatch.setattr(reporte, "fbsm", fake_fbsm)
+    filas = reporte._ejecutar_metodos(
+        problema, np.linspace(0.0, 8.0, 161), 0.05,
+        "crank_nicolson", max_iter=200, tol=1e-6, omega=0.2,
+        orden_caso=1.0,
+    )
+
+    assert np.all(fbsm_calls[0][1] == 0.0)
+    assert fbsm_calls[0][2:] == (0.05, "crank_nicolson", {"max_iter": 200, "tol": 1e-6, "omega": 0.2})
+    projected_control, projected_kwargs = problema.projected_calls[0]
+    assert np.all(projected_control == 0.0)
+    assert projected_kwargs == {
+        "max_iter": 200, "tolerancia": 1e-6,
+        "metodo_integracion": "crank_nicolson", "r": 10, "a": 1e-4,
+        "b": 0.5, "t_min": 1e-12, "max_reducciones": 50,
+    }
+    assert [fila.metodo for fila in filas] == ["FBSM", "Projected gradient"]
+    assert [fila.iteraciones_nativas for fila in filas] == [3, 4]
+
+
+def test_runner_sir_quick_mode_changes_only_horizon_and_keeps_case_order(monkeypatch):
+    factory_calls = []
+
+    def fake_factory(*args):
+        factory_calls.append(args)
+        return SimpleNamespace(_m=1)
+
+    monkeypatch.setattr(reporte, "crear_problema_sir", fake_factory)
+    monkeypatch.setattr(reporte, "_ejecutar_metodos", lambda *args, **kwargs: [])
+
+    quick_grid, quick_rows, _ = reporte._resolver_sir(True)
+    official_grid, official_rows, _ = reporte._resolver_sir(False)
+
+    assert reporte._configuracion_ejecucion(True) == (0.05, 1e-5, 8.0, 0.5, 1e-6)
+    assert reporte._configuracion_ejecucion(False) == (0.01, 1e-6, 50.0, 0.5, 1e-6)
+    assert (quick_grid[-1], len(quick_grid), quick_rows) == (8.0, 17, [])
+    assert (official_grid[-1], len(official_grid), official_rows) == (50.0, 101, [])
+    assert [(call[2], call[-1]) for call in factory_calls] == [
+        (1.0, 8.0), (10.0, 8.0), (1.0, 50.0), (10.0, 50.0),
+    ]
+
+
+def _artifact_inputs():
+    lqr = pd.DataFrame([dict(zip(reporte._LQR_COLUMNS, ["LQR", "FBSM"] + [0.0] * 8))])
+    sir = pd.DataFrame([dict(zip(reporte._SIR_COLUMNS, [1.0, "FBSM"] + [0.0] * 6 + [reporte._SIR_DISCLAIMER]))])
+    figures = tuple(plt.subplots()[0] for _ in range(3))
+    return figures, lqr, sir
+
+
+def test_artifact_publication_replaces_stale_exact_seven_files(tmp_path):
+    destino = tmp_path / "report"
+    destino.mkdir()
+    for nombre in reporte._ARTIFACT_NAMES:
+        (destino / nombre).write_bytes(b"stale")
+    figures, lqr, sir = _artifact_inputs()
+
+    reporte._publicar(destino, figures, lqr, sir)
+
+    assert {path.name for path in destino.iterdir()} == set(reporte._ARTIFACT_NAMES)
+    for nombre in reporte._FIGURE_NAMES:
+        assert (destino / nombre).read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    assert list(pd.read_csv(destino / "lqr_comparison.csv").columns) == reporte._LQR_COLUMNS
+    assert list(pd.read_csv(destino / "sir_comparison.csv").columns) == reporte._SIR_COLUMNS
+    assert "tabular" in (destino / "lqr_comparison.tex").read_text()
+    plt.close("all")
+
+
+def test_atomic_publication_restores_all_stale_files_on_promotion_failure(tmp_path, monkeypatch):
+    destino = tmp_path / "report"
+    destino.mkdir()
+    for nombre in reporte._ARTIFACT_NAMES:
+        (destino / nombre).write_bytes(f"old:{nombre}".encode())
+    figures, lqr, sir = _artifact_inputs()
+    real_replace = reporte.os.replace
+    promoted = 0
+
+    def failing_replace(source, target):
+        nonlocal promoted
+        source, target = Path(source), Path(target)
+        if source.parent != destino and target.parent == destino:
+            assert source.parent.parent == destino.parent
+            promoted += 1
+            if promoted == 2:
+                raise OSError("promotion failed")
+        return real_replace(source, target)
+
+    monkeypatch.setattr(reporte.os, "replace", failing_replace)
+    with pytest.raises(OSError, match="promotion failed"):
+        reporte._publicar(destino, figures, lqr, sir)
+
+    assert all((destino / name).read_bytes() == f"old:{name}".encode() for name in reporte._ARTIFACT_NAMES)
+    plt.close("all")
