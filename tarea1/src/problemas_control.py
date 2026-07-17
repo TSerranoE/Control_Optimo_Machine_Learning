@@ -246,6 +246,26 @@ class ControlProblem:
                 f"pero devolvió {f_prueba.shape}."
             )
 
+    @property
+    def t_span(self) -> tuple[float, float]:
+        """Devuelve el intervalo temporal inmutable del problema."""
+        return self._t_span
+
+    @property
+    def estado_inicial(self) -> np.ndarray:
+        """Devuelve una copia defensiva del estado inicial."""
+        return self._x0.copy()
+
+    @property
+    def dimension_estado(self) -> int:
+        """Devuelve la dimensión del estado."""
+        return self._n
+
+    @property
+    def dimension_control(self) -> int:
+        """Devuelve la dimensión del control."""
+        return self._m
+
     def hamiltoniano(
         self, t: float, x: np.ndarray, p: np.ndarray, u: np.ndarray
     ) -> float:
@@ -313,6 +333,25 @@ class ControlProblem:
         """
         x_T = np.asarray(x_T, dtype=float)
         return np.asarray(self._dphi_dx(x_T))
+
+    def proyectar_control(self, u: np.ndarray) -> np.ndarray:
+        """Proyecta uno o más controles sobre el conjunto admisible."""
+        control = np.asarray(u, dtype=float)
+        if self._conjunto is None:
+            return control.copy()
+        if control.ndim == 1:
+            return self._conjunto.proyectar(control)
+        return np.array([self._conjunto.proyectar(nodo) for nodo in control])
+
+    def evaluar_costo_trayectoria(
+        self, tiempos: np.ndarray, estados: np.ndarray, controles: np.ndarray
+    ) -> float:
+        """Evalúa el costo sobre trayectorias ya integradas."""
+        costos = np.array(
+            [self._l(t, x, u) for t, x, u in zip(tiempos, estados, controles)],
+            dtype=float,
+        )
+        return float(np.trapezoid(costos, tiempos) + self._phi(estados[-1]))
 
     def evaluar_costo(
         self,
@@ -407,32 +446,52 @@ class ControlProblem:
         return control.copy(), h
 
     def _integrar_estado(
-        self, control: np.ndarray, h: float, metodo_integracion: str
+        self, control: np.ndarray, h: float | np.ndarray, metodo_integracion: str
     ) -> tuple[np.ndarray, np.ndarray]:
         """Integra el estado usando el convenio de control de cada método."""
+        pasos = np.asarray(h, dtype=float)
+        grilla: tuple[float, ...] = self._t_span
+        if pasos.ndim == 1:
+            grilla_array = self._t0 + np.concatenate(([0.0], np.cumsum(pasos)))
+            grilla_array[-1] = self._t_span[1]
+            grilla = tuple(grilla_array)
         u_solver = control
         if metodo_integracion == "rk4":
             tiempos = np.linspace(self._t0, self._t_span[1], control.shape[0])
+            if pasos.ndim == 1:
+                tiempos = np.asarray(grilla)
             u_solver = interp1d(tiempos, control, axis=0, kind="linear")
         solucion = self._solver.solve(
             self._f,
             self._x0,
-            self._t_span,
+            grilla,
             h,
             method=metodo_integracion,
             u=u_solver,
         )
         return solucion.tiempos, solucion.estados
 
+    def integrar_estado(
+        self, control: np.ndarray, h: float | np.ndarray, metodo_integracion: str
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Integra públicamente el estado con control nodal."""
+        return self._integrar_estado(control, h, metodo_integracion)
+
     def _integrar_adjunto(
         self,
         tiempos: np.ndarray,
         estados: np.ndarray,
         control: np.ndarray,
-        h: float,
+        h: float | np.ndarray,
         metodo_integracion: str,
     ) -> np.ndarray:
         """Integra el adjunto continuo por reversión temporal."""
+        pasos = np.asarray(h, dtype=float)
+        if pasos.ndim == 1:
+            return self._integrar_adjunto_en_grilla(
+                tiempos, estados, control, pasos, metodo_integracion
+            )
+
         tf = self._t_span[1]
         q_0 = self.condicion_transversalidad(estados[-1])
 
@@ -457,6 +516,51 @@ class ControlProblem:
             u=datos_reversos,
         )
         return solucion.estados[::-1]
+
+    def _integrar_adjunto_en_grilla(
+        self,
+        tiempos: np.ndarray,
+        estados: np.ndarray,
+        control: np.ndarray,
+        pasos: np.ndarray,
+        metodo_integracion: str,
+    ) -> np.ndarray:
+        """Integra el adjunto sobre una grilla posiblemente no uniforme."""
+        t0, tf = tiempos[0], tiempos[-1]
+        horizonte = tf - t0
+        x_interp = interp1d(
+            tiempos, estados, axis=0, kind="linear", fill_value="extrapolate"
+        )
+        u_interp = interp1d(
+            tiempos, control, axis=0, kind="linear", fill_value="extrapolate"
+        )
+
+        def campo_reverso(tau, p, _u=None):
+            t = tf - tau
+            return -self.sistema_adjunto(t, x_interp(t), p, u_interp(t))
+
+        pasos_reversos = pasos[::-1]
+        tiempos_tau = np.concatenate(([0.0], np.cumsum(pasos_reversos)))
+        tiempos_tau[-1] = horizonte
+        solucion = EDOSolver().solve(
+            campo_reverso,
+            self.condicion_transversalidad(estados[-1]),
+            tuple(tiempos_tau),
+            pasos_reversos,
+            method=metodo_integracion,
+        )
+        return solucion.estados[::-1]
+
+    def integrar_adjunto(
+        self,
+        tiempos: np.ndarray,
+        estados: np.ndarray,
+        control: np.ndarray,
+        h: float | np.ndarray,
+        metodo_integracion: str,
+    ) -> np.ndarray:
+        """Integra públicamente el sistema adjunto continuo."""
+        return self._integrar_adjunto(tiempos, estados, control, h, metodo_integracion)
 
     @staticmethod
     def _integrar_valores(
@@ -723,6 +827,23 @@ class ControlProblem:
         return ResultadoGradienteProyectado(
             control, estados, adjuntos, tuple(historial), iteraciones, convergio
         )
+
+    def fbsm(
+        self,
+        u_inicial: np.ndarray,
+        h: float | np.ndarray,
+        metodo_integracion: str = "rk4",
+        max_iter: int = 100,
+        tol: float = 1e-6,
+        omega: float = 0.99,
+    ):
+        """Resuelve FBSM delegando en la función externa."""
+        if __package__:
+            from .metodos_optimizacion import fbsm
+        else:
+            from metodos_optimizacion import fbsm
+
+        return fbsm(self, u_inicial, h, metodo_integracion, max_iter, tol, omega)
 
     def control_optimo_puntual(
         self, t: float, x: np.ndarray, p: np.ndarray
