@@ -113,7 +113,7 @@ def generar_reporte_problema3(ruta_salida: Path, modo_rapido: bool = False) -> d
     for h, error in zip(hs, errores):
         print(f"h={h:0.3f}: {error:.8e}")
 
-    T_sir, h_sir, tol_sir = (8.0, 0.1, 1e-5) if modo_rapido else (50.0, 0.05, 1e-6)
+    T_sir, h_sir, tol_sir = (8.0, 0.1, 1e-5) if modo_rapido else (50.0, 0.5, 1e-6)
     sir_alto = _resolver_sir(10.0, T_sir, h_sir, tol_sir)
     sir_bajo = _resolver_sir(1.0, T_sir, h_sir, tol_sir)
     tiempos_sir = np.linspace(0.0, T_sir, sir_alto.estado.shape[0])

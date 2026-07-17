@@ -51,14 +51,33 @@ def _error_l2(problema_fbsm, referencia, h, metodo="rk4"):
     return float(error), resultado, control_ref, float(costo_ref)
 
 
-def test_fbsm_vs_riccati_l2_error(lqr_fbsm_problema, lqr_riccati_referencia):
+def test_fbsm_vs_riccati_l2_error(
+    lqr_fbsm_problema, lqr_riccati_referencia, monkeypatch
+):
+    llamadas_riccati = 0
+    control_riccati = lqr_riccati_referencia.control_riccati
+
+    def registrar_control_riccati(t, x):
+        nonlocal llamadas_riccati
+        llamadas_riccati += 1
+        return control_riccati(t, x)
+
+    monkeypatch.setattr(
+        lqr_riccati_referencia, "control_riccati", registrar_control_riccati
+    )
     error, resultado, control_ref, costo_ref = _error_l2(
         lqr_fbsm_problema, lqr_riccati_referencia, 0.005,
     )
+    assert llamadas_riccati > 0
     assert resultado.convergio
     assert control_ref.shape == resultado.control_optimo.shape
     assert error < 0.01
     assert resultado.historia_costo[-1] == pytest.approx(costo_ref, rel=1e-3)
+
+
+def test_lqr_factory_returns_problema_lqr(lqr_fbsm_problema):
+    assert isinstance(lqr_fbsm_problema, ProblemaLQR)
+    assert lqr_fbsm_problema._h == pytest.approx(0.01)
 
 
 def test_fbsm_l2_error_decreases_with_h(lqr_fbsm_problema, lqr_riccati_referencia):
@@ -99,3 +118,26 @@ def test_lqr_fbsm_minimizador_depende_del_adjunto(lqr_fbsm_problema):
     u2 = lqr_fbsm_problema.control_optimo_puntual(0.0, np.array([1.0]), np.array([2.0]))
     np.testing.assert_allclose(u1, [-1.0])
     np.testing.assert_allclose(u2, [-2.0])
+
+
+def test_fbsm_usa_minimizador_lqr_basado_en_adjunto(
+    lqr_fbsm_problema, monkeypatch
+):
+    adjuntos = []
+    metodo_original = ProblemaLQR.control_optimo_puntual
+
+    def registrar_control(problema, t, x, p):
+        adjuntos.append(np.array(p, copy=True))
+        return metodo_original(problema, t, x, p)
+
+    monkeypatch.setattr(ProblemaLQR, "control_optimo_puntual", registrar_control)
+    resultado = fbsm(
+        lqr_fbsm_problema,
+        np.zeros((5, 1)),
+        h=0.5,
+        max_iter=1,
+        omega=1.0,
+    )
+
+    assert len(adjuntos) == 5
+    np.testing.assert_allclose(resultado.control_optimo, -np.asarray(adjuntos))

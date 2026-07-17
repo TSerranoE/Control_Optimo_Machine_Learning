@@ -757,7 +757,7 @@ class ControlProblem:
             if self._conjunto is not None and self._conjunto.es_caja():
                 bounds = self._conjunto.limites()[0]
                 resultado = minimize_scalar(
-                    objetivo, bounds=bounds, method="bounded", tol=1e-8
+                    objetivo, bounds=bounds, method="bounded", options={"xatol": 1e-8}
                 )
             else:
                 resultado = minimize_scalar(objetivo, method="brent", tol=1e-8)
