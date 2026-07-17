@@ -80,6 +80,64 @@ def test_reporte_conserva_cinco_png_y_figuras_renderizables(reporte_rapido):
     assert all(plt.fignum_exists(figura.number) for figura in resumen["figuras"])
 
 
+def test_figuras_tienen_titulos_etiquetas_y_leyendas_descriptivas(reporte_rapido):
+    _, resumen = reporte_rapido
+    figuras = resumen["figuras"]
+
+    for figura in figuras:
+        titulos = [eje.get_title() for eje in figura.axes]
+        assert all("Problema 3" not in titulo for titulo in titulos)
+        assert figura._suptitle is None or "Problema 3" not in figura._suptitle.get_text()
+        assert all(eje.get_legend() is not None for eje in figura.axes if eje.lines)
+        assert all(eje.get_xlabel() and eje.get_ylabel() for eje in figura.axes if eje.lines)
+
+    for figura in figuras[:3]:
+        assert all("LQR" in eje.get_title() for eje in figura.axes if eje.lines)
+    for figura in figuras[3:]:
+        assert all("SIR" in eje.get_title() for eje in figura.axes if eje.lines)
+
+    assert [eje.get_ylabel() for eje in figuras[0].axes] == [
+        "Estado LQR x(t)", "Control LQR u*(t)", "Valor del costo J",
+    ]
+    assert figuras[3].axes[0].get_ylabel() == "Proporción poblacional"
+    assert figuras[3].axes[1].get_ylabel() == "Tasa de vacunación u*(t)"
+    leyendas = [
+        [[texto.get_text() for texto in eje.get_legend().get_texts()] for eje in figura.axes]
+        for figura in figuras
+    ]
+    assert leyendas == [
+        [["Estado LQR por FBSM"], ["Control LQR por FBSM"], ["Costo evaluado por FBSM"]],
+        [["Control por FBSM", "Control por Riccati"]],
+        [["Error L² FBSM-Riccati"]],
+        [["Susceptibles S(t)", "Infectados I(t)"], ["Control SIR óptimo u*(t)"]],
+        [["Solución SIR, A/B=10", "Solución SIR, A/B=1"]],
+    ]
+
+
+def test_figuras_documentan_escalas_y_parametros(reporte_rapido):
+    _, resumen = reporte_rapido
+    figuras = resumen["figuras"]
+    textos = [" ".join(texto.get_text() for texto in figura.texts) for figura in figuras]
+    lqr_requeridos = ("A=-1", "B=1", "Q=1", "R=1", "S=1", "x0=1", "T=2")
+    sir_requeridos = (
+        "beta=0.3", "gamma=0.1", "B=1", "u_max=0.4", "S0=0.99", "I0=0.01",
+        "omega=0.2", "h=0.1", "T=8",
+    )
+
+    assert all(all(parametro in texto for parametro in lqr_requeridos) for texto in textos[:3])
+    assert "h=0.01" in textos[0] and "h=0.01" in textos[1]
+    assert "h={0.1, 0.05, 0.025, 0.01}" in textos[2]
+    assert "A=10" in textos[3]
+    assert "A/B comparados: 10 y 1" in textos[4]
+    assert all(all(parametro in texto for parametro in sir_requeridos) for texto in textos[3:])
+
+    eje_error = figuras[2].axes[0]
+    assert eje_error.get_xscale() == eje_error.get_yscale() == "log"
+    assert "escala logarítmica" in eje_error.get_xlabel()
+    assert "escala logarítmica" in eje_error.get_ylabel()
+    assert "escala log-log" in textos[2]
+
+
 def test_notebook_muestra_y_cierra_figuras_sin_ipython(monkeypatch):
     ruta_notebook = Path("tarea1/notebooks/ejecucion_tarea1.py")
     codigo = ruta_notebook.read_text(encoding="utf-8")

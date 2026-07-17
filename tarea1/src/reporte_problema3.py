@@ -49,8 +49,12 @@ def _comparar_lqr(h: float):
     return tiempos, resultado, control_ref, float(error)
 
 
+def _anotar_parametros(figura, texto: str) -> None:
+    figura.text(0.5, 0.985, texto, ha="center", va="top", fontsize=9)
+
+
 def _guardar(figura, ruta: Path) -> None:
-    figura.tight_layout()
+    figura.tight_layout(rect=(0.0, 0.0, 1.0, 0.92))
     figura.savefig(ruta, dpi=150, bbox_inches="tight")
 
 
@@ -83,30 +87,68 @@ def generar_reporte_problema3(ruta_salida: Path, modo_rapido: bool = False) -> d
     errores = [comparacion[3] for comparacion in comparaciones]
 
     figura, ejes = plt.subplots(3, 1, figsize=(8, 9), sharex=False)
-    ejes[0].plot(tiempos, resultado_lqr.estado[:, 0], color="tab:blue")
-    ejes[0].set(ylabel="x(t)", title="Problema 3a: trayectoria de estado")
-    ejes[1].plot(tiempos, resultado_lqr.control_optimo[:, 0], color="tab:orange")
-    ejes[1].set(xlabel="t", ylabel="u*(t)", title="Control óptimo por FBSM")
-    ejes[2].plot(range(1, resultado_lqr.iteraciones + 1), resultado_lqr.historia_costo)
-    ejes[2].set(xlabel="Iteración", ylabel="J", title="Convergencia del costo")
+    ejes[0].plot(
+        tiempos, resultado_lqr.estado[:, 0], color="tab:blue",
+        label="Estado LQR por FBSM",
+    )
+    ejes[0].set(
+        xlabel="Tiempo t", ylabel="Estado LQR x(t)", title="Estado LQR por FBSM",
+    )
+    ejes[1].plot(
+        tiempos, resultado_lqr.control_optimo[:, 0], color="tab:orange",
+        label="Control LQR por FBSM",
+    )
+    ejes[1].set(
+        xlabel="Tiempo t", ylabel="Control LQR u*(t)", title="Control LQR por FBSM",
+    )
+    ejes[2].plot(
+        range(1, resultado_lqr.iteraciones + 1), resultado_lqr.historia_costo,
+        label="Costo evaluado por FBSM",
+    )
+    ejes[2].set(
+        xlabel="Iteración de FBSM", ylabel="Valor del costo J",
+        title="Costo LQR durante FBSM",
+    )
     for eje in ejes:
         eje.grid(alpha=0.3)
+        eje.legend()
+    _anotar_parametros(
+        figura,
+        "LQR: A=-1, B=1, Q=1, R=1, S=1, x0=1, T=2\nMétodo: FBSM; h=0.01",
+    )
     _guardar(figura, ruta_salida / "3a_fbsm_trayectorias.png")
     figuras.append(figura)
 
     figura, eje = plt.subplots(figsize=(8, 4.5))
-    eje.plot(tiempos, resultado_lqr.control_optimo[:, 0], label="FBSM")
-    eje.plot(tiempos, control_riccati[:, 0], "--", label="Riccati")
-    eje.set(xlabel="t", ylabel="u(t)", title="Problema 3b: FBSM vs. Riccati")
+    eje.plot(tiempos, resultado_lqr.control_optimo[:, 0], label="Control por FBSM")
+    eje.plot(tiempos, control_riccati[:, 0], "--", label="Control por Riccati")
+    eje.set(
+        xlabel="Tiempo t", ylabel="Control LQR u(t)",
+        title="Control LQR: FBSM y Riccati",
+    )
     eje.grid(alpha=0.3)
     eje.legend()
+    _anotar_parametros(
+        figura,
+        "LQR: A=-1, B=1, Q=1, R=1, S=1, x0=1, T=2\nPaso de comparación: h=0.01",
+    )
     _guardar(figura, ruta_salida / "3b_fbsm_vs_riccati.png")
     figuras.append(figura)
 
     figura, eje = plt.subplots(figsize=(7, 4.5))
-    eje.loglog(hs, errores, "o-")
-    eje.set(xlabel="Paso h", ylabel="Error L²", title="Error FBSM vs. Riccati")
+    eje.loglog(hs, errores, "o-", label="Error L² FBSM-Riccati")
+    eje.set(
+        xlabel="Paso h (escala logarítmica)",
+        ylabel="Error L² del control (escala logarítmica)",
+        title="Error L² del control LQR: FBSM y Riccati",
+    )
     eje.grid(which="both", alpha=0.3)
+    eje.legend()
+    _anotar_parametros(
+        figura,
+        "LQR: A=-1, B=1, Q=1, R=1, S=1, x0=1, T=2\n"
+        "Pasos comparados: h={0.1, 0.05, 0.025, 0.01}; escala log-log",
+    )
     _guardar(figura, ruta_salida / "3b_error_l2_vs_h.png")
     figuras.append(figura)
     print("Problema 3b — error en norma L²")
@@ -119,23 +161,50 @@ def generar_reporte_problema3(ruta_salida: Path, modo_rapido: bool = False) -> d
     tiempos_sir = np.linspace(0.0, T_sir, sir_alto.estado.shape[0])
 
     figura, ejes = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
-    ejes[0].plot(tiempos_sir, sir_alto.estado[:, 0], label="S(t)")
-    ejes[0].plot(tiempos_sir, sir_alto.estado[:, 1], label="I(t)")
-    ejes[0].set(ylabel="Proporción", title="Problema 3c: dinámica SIR controlada")
+    ejes[0].plot(tiempos_sir, sir_alto.estado[:, 0], label="Susceptibles S(t)")
+    ejes[0].plot(tiempos_sir, sir_alto.estado[:, 1], label="Infectados I(t)")
+    ejes[0].set(
+        xlabel="Tiempo t", ylabel="Proporción poblacional",
+        title="Estados de la solución SIR",
+    )
     ejes[0].legend()
-    ejes[1].plot(tiempos_sir, sir_alto.control_optimo[:, 0], color="tab:green")
-    ejes[1].set(xlabel="t", ylabel="u*(t)", title="Tasa óptima de vacunación")
+    ejes[1].plot(
+        tiempos_sir, sir_alto.control_optimo[:, 0], color="tab:green",
+        label="Control SIR óptimo u*(t)",
+    )
+    ejes[1].set(
+        xlabel="Tiempo t", ylabel="Tasa de vacunación u*(t)",
+        title="Control de la solución SIR",
+    )
+    ejes[1].legend()
     for eje in ejes:
         eje.grid(alpha=0.3)
+    _anotar_parametros(
+        figura,
+        "SIR: beta=0.3, gamma=0.1, A=10, B=1, u_max=0.4, S0=0.99, I0=0.01\n"
+        f"FBSM: omega=0.2, h={h_sir:g}, T={T_sir:g}",
+    )
     _guardar(figura, ruta_salida / "3c_sir_trayectorias.png")
     figuras.append(figura)
 
     figura, eje = plt.subplots(figsize=(8, 4.5))
-    eje.plot(tiempos_sir, sir_alto.control_optimo[:, 0], label="A/B = 10")
-    eje.plot(tiempos_sir, sir_bajo.control_optimo[:, 0], "--", label="A/B = 1")
-    eje.set(xlabel="t", ylabel="u*(t)", title="Dependencia del control respecto de A/B")
+    eje.plot(
+        tiempos_sir, sir_alto.control_optimo[:, 0], label="Solución SIR, A/B=10",
+    )
+    eje.plot(
+        tiempos_sir, sir_bajo.control_optimo[:, 0], "--", label="Solución SIR, A/B=1",
+    )
+    eje.set(
+        xlabel="Tiempo t", ylabel="Tasa de vacunación u*(t)",
+        title="Control de soluciones SIR según A/B",
+    )
     eje.grid(alpha=0.3)
     eje.legend()
+    _anotar_parametros(
+        figura,
+        "SIR: beta=0.3, gamma=0.1, B=1, u_max=0.4, S0=0.99, I0=0.01\n"
+        f"A/B comparados: 10 y 1; FBSM: omega=0.2, h={h_sir:g}, T={T_sir:g}",
+    )
     _guardar(figura, ruta_salida / "3c_sir_comparacion_ab.png")
     figuras.append(figura)
 
