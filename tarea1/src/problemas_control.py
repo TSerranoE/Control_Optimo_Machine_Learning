@@ -258,7 +258,7 @@ class ControlProblem:
         x : np.ndarray
             Estado, shape ``(n,)``.
         p : np.ndarray
-            Costado, shape ``(n,)``.
+            Estado adjunto, shape ``(n,)``.
         u : np.ndarray
             Control, shape ``(m,)``.
 
@@ -281,14 +281,14 @@ class ControlProblem:
         x : np.ndarray
             Estado, shape ``(n,)``.
         p : np.ndarray
-            Costado, shape ``(n,)``.
+            Estado adjunto, shape ``(n,)``.
         u : np.ndarray
             Control, shape ``(m,)``.
 
         Returns
         -------
         np.ndarray
-            Derivada del costado, shape ``(n,)``.
+            Derivada del estado adjunto, shape ``(n,)``.
         """
         x = np.asarray(x, dtype=float)
         p = np.asarray(p, dtype=float)
@@ -740,7 +740,7 @@ class ControlProblem:
         x : np.ndarray
             Estado, shape ``(n,)``.
         p : np.ndarray
-            Costado, shape ``(n,)``.
+            Estado adjunto, shape ``(n,)``.
 
         Returns
         -------
@@ -757,10 +757,12 @@ class ControlProblem:
             if self._conjunto is not None and self._conjunto.es_caja():
                 bounds = self._conjunto.limites()[0]
                 resultado = minimize_scalar(
-                    objetivo, bounds=bounds, method="bounded", tol=1e-8
+                    objetivo, bounds=bounds, method="bounded", options={"xatol": 1e-8}
                 )
             else:
                 resultado = minimize_scalar(objetivo, method="brent", tol=1e-8)
+            if not resultado.success or not np.all(np.isfinite(resultado.x)):
+                raise RuntimeError("La minimización puntual del Hamiltoniano falló.")
             return np.array([float(resultado.x)])
 
         u0 = np.zeros(self._m)
@@ -771,6 +773,8 @@ class ControlProblem:
         resultado = minimize(
             objetivo, u0, method="L-BFGS-B", bounds=bounds, tol=1e-6
         )
+        if not resultado.success or not np.all(np.isfinite(resultado.x)):
+            raise RuntimeError("La minimización puntual del Hamiltoniano falló.")
         return np.asarray(resultado.x, dtype=float)
 
 
@@ -893,8 +897,9 @@ class ProblemaLQR(ControlProblem):
     def _precomputar_riccati(self, h: float) -> None:
         """Resuelve la DRE hacia atrás mediante reversión temporal.
 
-        Integra ``dP/dτ = A^T P + P A - P B R^{-1} B^T P + Q`` en ``τ ∈ [0, T]``
-        con ``P(τ=0) = S`` y construye un interpolador ``P(t)`` para ``t ∈ [t0, tf]``.
+        Integra ``dP/dτ = A^T P + P A - P B R^{-1} B^T P + Q`` en
+        ``τ ∈ [0, tf - t0]`` con ``P(τ=0) = S`` y construye un interpolador
+        ``P(t)`` para ``t ∈ [t0, tf]`` mediante ``t = tf - τ``.
         """
         n = self._n
 
@@ -911,8 +916,9 @@ class ProblemaLQR(ControlProblem):
         P_T = self._S.flatten()
         sol = self._solver.solve(riccati_ode, P_T, (0.0, self._T), h)
 
-        # τ = T - t  ⇒  t = T - τ. Invertimos para obtener P(t) en tiempo directo.
-        self._P_tiempos = self._T - sol.tiempos[::-1]
+        tf = self._t_span[1]
+        # τ = tf - t. Invertimos para obtener P(t) en tiempo directo.
+        self._P_tiempos = tf - sol.tiempos[::-1]
         self._P_estados = sol.estados[::-1]
         self._P_interp = interp1d(
             self._P_tiempos, self._P_estados, axis=0, kind="linear"
@@ -921,10 +927,32 @@ class ProblemaLQR(ControlProblem):
     def control_optimo_puntual(
         self, t: float, x: np.ndarray, p: np.ndarray
     ) -> np.ndarray:
-        """Devuelve el control óptimo analítico vía Riccati.
+        """Devuelve el minimizador puntual del Hamiltoniano LQR.
 
-        El argumento ``p`` no se utiliza porque la solución Riccati ya incorpora
-        el estado adjunto a través de ``P(t)``.
+        Parameters
+        ----------
+        t : float
+            Instante de tiempo.
+        x : np.ndarray
+            Estado, shape ``(n,)`` (no utilizado por la fórmula).
+        p : np.ndarray
+            Estado adjunto, shape ``(n,)``.
+
+        Returns
+        -------
+        np.ndarray
+            Control ``u*(t) = -R^{-1} B^T p`` proyectado sobre el conjunto
+            admisible cuando corresponda, shape ``(m,)``.
+        """
+        p = np.asarray(p, dtype=float)
+        u_libre = -self._R_inv @ self._B.T @ p
+
+        if self._conjunto is not None:
+            return self._conjunto.proyectar(u_libre)
+        return u_libre
+
+    def control_riccati(self, t: float, x: np.ndarray) -> np.ndarray:
+        """Devuelve el control de realimentación obtenido mediante Riccati.
 
         Parameters
         ----------
@@ -932,13 +960,11 @@ class ProblemaLQR(ControlProblem):
             Instante de tiempo.
         x : np.ndarray
             Estado, shape ``(n,)``.
-        p : np.ndarray
-            Estado adjunto (no utilizado en la fórmula Riccati).
 
         Returns
         -------
         np.ndarray
-            Control óptimo ``u*(t) = -R^{-1} B^T P(t) x`` proyectado sobre el
+            Control ``u*(t) = -R^{-1} B^T P(t) x`` proyectado sobre el
             conjunto admisible cuando corresponda, shape ``(m,)``.
         """
         x = np.asarray(x, dtype=float)

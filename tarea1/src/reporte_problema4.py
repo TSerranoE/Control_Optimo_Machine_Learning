@@ -168,7 +168,7 @@ def _metricas_riccati(
 
 def _control_riccati(referencia: Any, tiempos: np.ndarray, estados: np.ndarray) -> np.ndarray:
     return np.array([
-        referencia.control_optimo_puntual(t, x, np.zeros(referencia._n))
+        referencia.control_riccati(t, x)
         for t, x in zip(tiempos, estados)
     ])
 

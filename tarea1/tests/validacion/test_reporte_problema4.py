@@ -164,6 +164,15 @@ def test_metric_riccati_l2_and_relative_gap_include_zero_reference_guard(bad_cos
         reporte._metricas_riccati(tiempos, np.zeros(3), np.zeros(3), bad_cost, bad_reference)
 
 
+def test_control_riccati_uses_reference_feedback():
+    class Reference:
+        control_riccati = staticmethod(lambda t, x: np.array([t + x[0]]))
+        control_optimo_puntual = staticmethod(lambda *args: pytest.fail("pointwise control used"))
+
+    control = reporte._control_riccati(Reference(), np.array([0.0, 1.0]), np.array([[2.0], [3.0]]))
+    np.testing.assert_allclose(control, [[2.0], [4.0]])
+
+
 @pytest.mark.parametrize("tiempos", [[1.0, 0.5, 0.0], [0.0, 0.0, 1.0], [0.0, np.nan, 1.0]])
 def test_validation_metric_paths_reject_invalid_time_grids(tiempos):
     datos = np.zeros((3, 1))

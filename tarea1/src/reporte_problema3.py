@@ -31,7 +31,7 @@ def _comparar_lqr(h: float):
     )
 
     def lazo_cerrado(t, x):
-        u = referencia.control_optimo_puntual(t, x, np.zeros(1))
+        u = referencia.control_riccati(t, x)
         return referencia._f(t, x, u)
 
     estado_ref = solve_ivp(
@@ -39,7 +39,7 @@ def _comparar_lqr(h: float):
         rtol=1e-11, atol=1e-13,
     ).y.T
     control_ref = np.array([
-        referencia.control_optimo_puntual(t, x, np.zeros(1))
+        referencia.control_riccati(t, x)
         for t, x in zip(tiempos, estado_ref)
     ])
     error = np.sqrt(np.trapezoid(
@@ -113,7 +113,7 @@ def generar_reporte_problema3(ruta_salida: Path, modo_rapido: bool = False) -> d
     for h, error in zip(hs, errores):
         print(f"h={h:0.3f}: {error:.8e}")
 
-    T_sir, h_sir, tol_sir = (8.0, 0.1, 1e-5) if modo_rapido else (50.0, 0.05, 1e-6)
+    T_sir, h_sir, tol_sir = (8.0, 0.1, 1e-5) if modo_rapido else (50.0, 0.5, 1e-6)
     sir_alto = _resolver_sir(10.0, T_sir, h_sir, tol_sir)
     sir_bajo = _resolver_sir(1.0, T_sir, h_sir, tol_sir)
     tiempos_sir = np.linspace(0.0, T_sir, sir_alto.estado.shape[0])

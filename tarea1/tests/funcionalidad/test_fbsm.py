@@ -1,6 +1,7 @@
 """Tests funcionales del núcleo Forward-Backward Sweep Method (FBSM)."""
 
 from dataclasses import FrozenInstanceError
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -14,7 +15,7 @@ from problemas_control import ConjuntoAdmisible, ProblemaLQR
 def lqr_scalar_problem():
     """Problema LQR escalar usado para validar FBSM."""
     return ProblemaLQR(
-        A=np.array([[1.0]]),
+        A=np.array([[-1.0]]),
         B=np.array([[1.0]]),
         Q=np.array([[1.0]]),
         R=np.array([[1.0]]),
@@ -90,6 +91,46 @@ def test_integrar_adjunto_atras_satisface_transversalidad(lqr_scalar_problem, u_
     )
 
 
+def test_integrar_adjunto_atras_invierte_pasos_no_uniformes(
+    lqr_scalar_problem, monkeypatch
+):
+    """El barrido inverso alinea cada intervalo con su paso en orden inverso."""
+    pasos = np.array([0.1, 0.2, 0.3, 0.4])
+    tiempos = np.concatenate(([0.0], np.cumsum(pasos)))
+    control = np.zeros((len(tiempos), 1))
+    estado = EDOSolver().solve(
+        lqr_scalar_problem._f,
+        lqr_scalar_problem._x0,
+        tuple(tiempos),
+        pasos,
+        method="euler_progresivo",
+        u=control,
+    ).estados
+    llamada = {}
+    solve_original = EDOSolver.solve
+
+    def registrar_solve(self, f, x0, t_span, h, **kwargs):
+        llamada["t_span"] = np.asarray(t_span)
+        llamada["h"] = np.asarray(h)
+        return solve_original(self, f, x0, t_span, h, **kwargs)
+
+    monkeypatch.setattr(EDOSolver, "solve", registrar_solve)
+    adjunto = _integrar_adjunto_atras(
+        lqr_scalar_problem,
+        estado,
+        control,
+        tiempos,
+        pasos,
+        "euler_progresivo",
+    )
+
+    np.testing.assert_allclose(llamada["h"], pasos[::-1])
+    np.testing.assert_allclose(np.diff(llamada["t_span"]), pasos[::-1])
+    np.testing.assert_allclose(
+        adjunto[-1], lqr_scalar_problem.condicion_transversalidad(estado[-1])
+    )
+
+
 def test_fbsm_converge_lqr_scalar(lqr_scalar_problem, u_cero_lqr):
     """FBSM debe converger para el problema LQR escalar con tolerancia razonable."""
     resultado = fbsm(
@@ -125,6 +166,21 @@ def test_fbsm_max_iter_flag(lqr_scalar_problem, u_cero_lqr):
     assert resultado.iteraciones == 5
 
 
+def test_fbsm_costo_igual_con_control_cambiante_no_converge(lqr_scalar_problem):
+    """Un costo constante no basta si el control continúa oscilando."""
+    lqr_scalar_problem._l = lambda _t, _x, _u: 0.0
+    lqr_scalar_problem._phi = lambda _x: 0.0
+    alternantes = iter(np.repeat([1.0, -1.0, 1.0], 3))
+    lqr_scalar_problem.control_optimo_puntual = (
+        lambda _t, _x, _p: np.array([next(alternantes)])
+    )
+
+    resultado = fbsm(lqr_scalar_problem, np.zeros((3, 1)), h=0.5, max_iter=3, tol=1e-6, omega=1.0)
+
+    assert resultado.historia_costo == (0.0, 0.0, 0.0)
+    assert not resultado.convergio and resultado.iteraciones == 3
+
+
 def test_fbsm_converge_temprano(lqr_scalar_problem, u_cero_lqr):
     """El criterio relativo de costo detiene FBSM antes del máximo."""
     resultado = fbsm(
@@ -157,6 +213,20 @@ def test_fbsm_relajacion_omega_1(lqr_scalar_problem, u_cero_lqr):
     np.testing.assert_allclose(resultado.control_optimo, -0.25)
 
 
+@pytest.mark.parametrize("m,optimizador", [(1, "minimize_scalar"), (2, "minimize")])
+@pytest.mark.parametrize(
+    "resultado", [SimpleNamespace(success=False, x=0.0), SimpleNamespace(success=True, x=np.nan)]
+)
+def test_control_optimo_rechaza_resultado_invalido(
+    simple_control_problem, monkeypatch, m, optimizador, resultado
+):
+    simple_control_problem._m = m
+    monkeypatch.setattr(f"problemas_control.{optimizador}", lambda *args, **kwargs: resultado)
+
+    with pytest.raises(RuntimeError, match="minimización"):
+        simple_control_problem.control_optimo_puntual(0.0, np.ones(1), np.ones(1))
+
+
 @pytest.mark.parametrize("metodo", EDOSolver.METODOS)
 def test_fbsm_cinco_metodos(lqr_scalar_problem, metodo):
     """FBSM debe converger con los 5 métodos de EDOSolver."""
@@ -177,6 +247,42 @@ def test_fbsm_cinco_metodos(lqr_scalar_problem, metodo):
 
     assert resultado.convergio
     assert resultado.iteraciones < 100
+
+
+@pytest.mark.parametrize("metodo", ["rk4", "crank_nicolson"])
+def test_fbsm_pasos_no_uniformes_shapes_y_convergencia(lqr_scalar_problem, metodo):
+    """Una grilla no uniforme funciona con métodos explícitos e implícitos."""
+    pasos = np.tile([0.03, 0.07], 10)
+    resultado = fbsm(
+        lqr_scalar_problem,
+        np.zeros((len(pasos) + 1, 1)),
+        h=pasos,
+        metodo_integracion=metodo,
+        max_iter=100,
+        tol=1e-4,
+    )
+
+    assert resultado.convergio
+    assert resultado.control_optimo.shape == (len(pasos) + 1, 1)
+    assert resultado.estado.shape == (len(pasos) + 1, 1)
+    assert resultado.adjunto.shape == (len(pasos) + 1, 1)
+    assert np.all(np.isfinite(resultado.control_optimo))
+    assert np.all(np.isfinite(resultado.estado))
+    assert np.all(np.isfinite(resultado.adjunto))
+    assert np.all(np.isfinite(resultado.historia_costo))
+
+
+def test_fbsm_vector_uniforme_consistente_con_escalar(lqr_scalar_problem):
+    """Un vector uniforme conserva el resultado solicitado por el paso escalar."""
+    h = 0.05
+    u0 = np.zeros((21, 1))
+    escalar = fbsm(lqr_scalar_problem, u0, h=h, tol=1e-6)
+    vector = fbsm(lqr_scalar_problem, u0, h=np.full(20, h), tol=1e-6)
+
+    np.testing.assert_allclose(vector.control_optimo, escalar.control_optimo)
+    np.testing.assert_allclose(vector.estado, escalar.estado)
+    np.testing.assert_allclose(vector.adjunto, escalar.adjunto)
+    np.testing.assert_allclose(vector.historia_costo, escalar.historia_costo)
 
 
 def test_fbsm_adjunto_condicion_terminal(lqr_scalar_problem, u_cero_lqr):
@@ -221,6 +327,9 @@ def test_fbsm_caja_respetada():
         ({"max_iter": 0}, "max_iter"),
         ({"tol": -1e-6}, "tol"),
         ({"tol": 0.0}, "tol"),
+        ({"tol": np.nan}, "tol"),
+        ({"tol": np.inf}, "tol"),
+        ({"tol": -np.inf}, "tol"),
         ({"omega": 0.0}, "omega"),
         ({"omega": 1.01}, "omega"),
     ],
@@ -240,3 +349,29 @@ def test_fbsm_input_validation(lqr_scalar_problem, u_cero_lqr, kwargs, match):
 
     with pytest.raises(ValueError, match=match):
         fbsm(**base)
+
+
+@pytest.mark.parametrize(
+    "pasos",
+    [
+        np.array([]),
+        np.array([[0.5, 0.5]]),
+        np.array([0.5, np.nan]),
+        np.array([0.5, np.inf]),
+        np.array([0.5, 0.0, 0.5]),
+        np.array([0.5, -0.1, 0.6]),
+        np.array([0.4, 0.4]),
+    ],
+)
+def test_fbsm_rechaza_vectores_de_pasos_invalidos(
+    lqr_scalar_problem, u_cero_lqr, pasos
+):
+    """Los pasos vectoriales deben representar exactamente intervalos válidos."""
+    with pytest.raises(ValueError, match="h|pasos"):
+        fbsm(lqr_scalar_problem, u_cero_lqr, h=pasos)
+
+
+def test_fbsm_vector_rechaza_shape_de_control_inicial(lqr_scalar_problem):
+    """El control vectorial tiene un nodo más que la cantidad de pasos."""
+    with pytest.raises(ValueError, match=r"\(4, 1\)"):
+        fbsm(lqr_scalar_problem, np.zeros((3, 1)), h=np.array([0.2, 0.3, 0.5]))
