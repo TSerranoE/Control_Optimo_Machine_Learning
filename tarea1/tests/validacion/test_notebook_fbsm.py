@@ -6,15 +6,17 @@ import sys
 
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
+import numpy as np
 import pytest
 
-from reporte_problema3 import generar_reporte_problema3
+from integradores import EDOSolver
+import reporte_problema3 as reporte
 
 
 @pytest.fixture(scope="module")
 def reporte_rapido(tmp_path_factory):
     ruta = tmp_path_factory.mktemp("reporte_problema3")
-    resumen = generar_reporte_problema3(ruta, modo_rapido=True)
+    resumen = reporte.generar_reporte_problema3(ruta, modo_rapido=True)
     yield ruta, resumen
     for figura in resumen["figuras"]:
         plt.close(figura)
@@ -23,6 +25,43 @@ def reporte_rapido(tmp_path_factory):
 def _assert_png_valido(ruta: Path) -> None:
     assert ruta.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     assert ruta.stat().st_size > 10_000
+
+
+def test_reporte_problema3_no_importa_ni_usa_solve_ivp():
+    fuente = Path(reporte.__file__).read_text(encoding="utf-8")
+
+    assert "solve_ivp" not in fuente
+
+
+def test_comparar_lqr_usa_solver_inyectado_con_grilla_rk4(monkeypatch):
+    solver = EDOSolver()
+    solve_original = solver.solve
+    llamadas = []
+
+    def registrar_solve(*args, **kwargs):
+        llamadas.append((args, kwargs))
+        return solve_original(*args, **kwargs)
+
+    problema_lqr = reporte.ProblemaLQR
+    monkeypatch.setattr(solver, "solve", registrar_solve)
+    monkeypatch.setattr(
+        reporte,
+        "ProblemaLQR",
+        lambda *args, **kwargs: problema_lqr(*args, **kwargs, solver=solver),
+    )
+
+    tiempos, resultado, control_ref, error = reporte._comparar_lqr(0.1)
+    campo, _, t_span, paso = llamadas[-1][0]
+
+    assert len(llamadas) == 2
+    assert llamadas[-1][1]["method"] == "rk4"
+    assert t_span == (0.0, 2.0)
+    assert paso == pytest.approx(0.1)
+    assert campo(0.0, np.array([1.0]), None).shape == (1,)
+    np.testing.assert_array_equal(tiempos, np.linspace(0.0, 2.0, 21))
+    assert resultado.estado.shape == (tiempos.size, 1)
+    assert resultado.control_optimo.shape == control_ref.shape == (tiempos.size, 1)
+    assert np.isfinite(error)
 
 
 def test_reporte_conserva_cinco_png_y_figuras_renderizables(reporte_rapido):

@@ -5,7 +5,6 @@ import sys
 
 import matplotlib
 import numpy as np
-from scipy.integrate import solve_ivp
 
 if "ipykernel" not in sys.modules:
     matplotlib.use("Agg")
@@ -30,14 +29,15 @@ def _comparar_lqr(h: float):
         max_iter=100, tol=1e-10,
     )
 
-    def lazo_cerrado(t, x):
+    def lazo_cerrado(t, x, _u=None):
         u = referencia.control_riccati(t, x)
         return referencia._f(t, x, u)
 
-    estado_ref = solve_ivp(
-        lazo_cerrado, referencia._t_span, referencia._x0, t_eval=tiempos,
-        rtol=1e-11, atol=1e-13,
-    ).y.T
+    solucion_ref = referencia._solver.solve(
+        lazo_cerrado, referencia._x0, referencia._t_span, h, method="rk4",
+    )
+    tiempos = solucion_ref.tiempos
+    estado_ref = solucion_ref.estados
     control_ref = np.array([
         referencia.control_riccati(t, x)
         for t, x in zip(tiempos, estado_ref)
