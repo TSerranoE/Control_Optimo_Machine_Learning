@@ -341,26 +341,115 @@ def _tabla_sir(tiempos, filas, problemas) -> pd.DataFrame:
     } for fila in filas], columns=_SIR_COLUMNS)
 
 
+def _traducir_nombre(metodo: str) -> str:
+    """Traduce nombres internos a español solo para gráficos."""
+    traduccion = {
+        "FBSM": "FBSM",
+        "Projected gradient": "Gradiente proyectado",
+        "Riccati": "Referencia de Riccati",
+    }
+    return traduccion.get(metodo, metodo)
+
+
+def _anotar_parametros(figura, texto: str) -> None:
+    """Agrega anotación de parámetros en la parte superior de la figura."""
+    figura.text(0.5, 0.985, texto, ha="center", va="top", fontsize=9)
+
+
 def _crear_figuras(t_lqr, filas_lqr, control_ref, t_sir, filas_sir):
+    # --- Figura LQR ---
     figura_lqr, eje = plt.subplots(figsize=(8, 4.5))
+    estilos = {"FBSM": "-", "Projected gradient": "--"}
     for fila in filas_lqr:
-        eje.plot(t_lqr, fila.control[:, 0], label=fila.metodo)
-    eje.plot(t_lqr, control_ref[:, 0], "--", label="Riccati")
-    eje.set(xlabel="t", ylabel="u(t)", title="LQR method comparison")
-    eje.legend(); eje.grid(alpha=0.3)
+        nombre_grafico = _traducir_nombre(fila.metodo)
+        n_iter = fila.iteraciones_nativas
+        eje.plot(
+            t_lqr, fila.control[:, 0],
+            estilos.get(fila.metodo, "-"),
+            label=f"{nombre_grafico} ({n_iter} iter.)",
+            linewidth=1.5,
+        )
+    n_iter_ref = filas_lqr[0].iteraciones_nativas if filas_lqr else 0
+    eje.plot(
+        t_lqr, control_ref[:, 0], ":",
+        label="Referencia de Riccati",
+        linewidth=1.5, color="tab:red",
+    )
+    eje.set_xlabel("Tiempo $t$")
+    eje.set_ylabel("Control $u(t)$")
+    eje.set_title("Control LQR: comparación de métodos")
+    eje.legend()
+    eje.grid(alpha=0.3)
+    _anotar_parametros(
+        figura_lqr,
+        r"LQR: $a=-1$, $b=1$, $q=1$, $r=1$, $s=1$, $x_0=1$, $T=2$"
+        "\nIntegración: RK4, $h=0.05$, tolerancia=$10^{-5}$; FBSM: $\\omega=0.99$",
+    )
     figuras = [figura_lqr]
+
+    # --- Figuras SIR ---
     for razon in (1.0, 10.0):
-        figura, ejes = plt.subplots(3, 1, figsize=(8, 8), sharex=True)
-        for fila in filas_sir:
-            if fila.orden_caso == razon:
-                ejes[0].plot(t_sir, fila.estados[:, 0], label=fila.metodo)
-                ejes[1].plot(t_sir, fila.estados[:, 1], label=fila.metodo)
-                ejes[2].plot(t_sir, fila.control[:, 0], label=fila.metodo)
-        for eje, etiqueta in zip(ejes, ("S(t)", "I(t)", "u(t)")):
-            eje.set_ylabel(etiqueta); eje.grid(alpha=0.3); eje.legend()
-        ejes[0].set_title(f"SIR method comparison, A/B={razon:g}")
-        ejes[-1].set_xlabel("t")
+        figura, ejes = plt.subplots(3, 1, figsize=(8, 8.5), sharex=True)
+        filas_razon = [f for f in filas_sir if f.orden_caso == razon]
+        for fila in filas_razon:
+            nombre_grafico = _traducir_nombre(fila.metodo)
+            n_iter = fila.iteraciones_nativas
+            estilo = "-" if fila.metodo == "FBSM" else "--"
+            ejes[0].plot(
+                t_sir, fila.estados[:, 0], estilo,
+                label=f"{nombre_grafico} ({n_iter} iter.)", linewidth=1.5,
+            )
+            ejes[1].plot(
+                t_sir, fila.estados[:, 1], estilo,
+                label=f"{nombre_grafico} ({n_iter} iter.)", linewidth=1.5,
+            )
+            ejes[2].plot(
+                t_sir, fila.control[:, 0], estilo,
+                label=f"{nombre_grafico} ({n_iter} iter.)", linewidth=1.5,
+            )
+
+        ejes[0].set_title("Población susceptible")
+        ejes[0].set_ylabel("Proporción susceptible $S(t)$")
+        ejes[0].legend()
+        ejes[0].grid(alpha=0.3)
+
+        ejes[1].set_title("Población infectada")
+        ejes[1].set_ylabel("Proporción infectada $I(t)$")
+        ejes[1].legend()
+        ejes[1].grid(alpha=0.3)
+
+        ejes[2].set_title("Control de vacunación")
+        ejes[2].set_ylabel("Tasa de vacunación $u(t)$")
+        ejes[2].set_xlabel("Tiempo $t$")
+        ejes[2].legend()
+        ejes[2].grid(alpha=0.3)
+
+        # Línea punteada u_max
+        u_max = 0.4
+        ejes[2].axhline(
+            y=u_max, color="red", linestyle=":", linewidth=1,
+            label=f"Límite $u_{{\\max}}={u_max}$",
+        )
+        ejes[2].legend()
+
+        # Anotación de parámetros
+        if razon == 1.0:
+            texto_sir = (
+                r"SIR: $\beta=0.3$, $\gamma=0.1$, $A=1$, $B=1$, $u_{{\max}}=0.4$,"
+                r" $S_0=0.99$, $I_0=0.01$"
+                "\nCrank–Nicolson: $T=50$, $h=0.5$, tolerancia=$10^{-6}$;"
+                " FBSM: $\\omega=0.2$"
+            )
+        else:
+            texto_sir = (
+                r"SIR: $\beta=0.3$, $\gamma=0.1$, $A=10$, $B=1$, $u_{{\max}}=0.4$,"
+                r" $S_0=0.99$, $I_0=0.01$"
+                "\nCrank–Nicolson: $T=50$, $h=0.5$, tolerancia=$10^{-6}$;"
+                " FBSM: $\\omega=0.2$"
+            )
+        _anotar_parametros(figura, texto_sir)
         figuras.append(figura)
+
     return tuple(figuras)
 
 
@@ -391,7 +480,8 @@ def _publicar(ruta: Path, figuras, tabla_lqr, tabla_sir) -> None:
     with TemporaryDirectory(dir=ruta.parent) as staging_raw, TemporaryDirectory(dir=ruta.parent) as backup_raw:
         staging, backup = Path(staging_raw), Path(backup_raw)
         for figura, nombre in zip(figuras, _FIGURE_NAMES):
-            figura.tight_layout(); figura.savefig(staging / nombre, dpi=150, bbox_inches="tight")
+            figura.tight_layout(rect=(0.0, 0.0, 1.0, 0.90))
+            figura.savefig(staging / nombre, dpi=150, bbox_inches="tight")
         for base, tabla in (("lqr_comparison", tabla_lqr), ("sir_comparison", tabla_sir)):
             tabla.to_csv(staging / f"{base}.csv", index=False)
             _guardar_latex(tabla, staging / f"{base}.tex")

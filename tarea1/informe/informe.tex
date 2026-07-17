@@ -10,6 +10,8 @@
 \usepackage{geometry}
 \usepackage{microtype}
 \usepackage{array}
+\usepackage{float}
+\usepackage{caption}
 
 \geometry{margin=2.5cm}
 \setlength{\parindent}{0pt}
@@ -43,7 +45,9 @@
 
 \section{Introducción y alcance}
 
-Este informe presenta la implementación y validación del integrador numérico de ecuaciones diferenciales ordinarias del Problema 1 y la infraestructura reutilizable para problemas de control óptimo tipo Bolza del Problema 2. El análisis se concentra en la convergencia y estabilidad observadas de los métodos de integración, y en la correspondencia entre la formulación matemática y la interfaz de control. Los Problemas 3 y 4 quedan fuera del alcance de este documento.
+Este informe presenta la implementación y validación de los cuatro componentes de la tarea. En el Problema 1 se construye un integrador reutilizable para ecuaciones diferenciales ordinarias y se estudian su convergencia y estabilidad en los sistemas de Lotka--Volterra y Van der Pol. En el Problema 2 se desarrolla una interfaz general para problemas de control óptimo de tipo Bolza. Sobre esta infraestructura, el Problema 3 implementa el método de barrido hacia adelante y hacia atrás (FBSM), validándolo con un problema LQR y aplicándolo a un modelo epidemiológico SIR con vacunación. Finalmente, el Problema 4 implementa un método de gradiente proyectado con paso espectral y búsqueda de línea, y compara ambos métodos bajo una metodología numérica común.
+
+El énfasis se pone en distinguir entre resultados exactos, referencias numéricas y evidencia empírica. En particular, la solución de Riccati entrega una validación independiente en el caso LQR, mientras que en el modelo SIR los costos y residuos de estacionariedad sólo constituyen indicadores de primer orden y no demuestran optimalidad global.
 
 \section{Problema 1: integrador de EDO}
 
@@ -99,7 +103,7 @@ La Figura~\ref{fig:lotka-error} muestra que el error disminuye al refinar la gri
         \includegraphics[width=\linewidth]{assets/generated/problema1/lotka_volterra_diagrama_fase.png}
         \small (b) Diagrama de fase de la referencia numérica.
     \end{minipage}
-    \caption{Lotka--Volterra con $\alpha=1.1$, $\beta=0.4$, $\delta=0.1$, $\gamma=0.4$ y $(x(0),y(0))=(10,5)$. En (a), RK4 con $h=0.1$ se compara con la referencia numérica Crank--Nicolson con $h=10^{-4}$; en (b) se muestra la órbita calculada con esa referencia.}
+    \caption{Lotka--Volterra con $\alpha=1.1$, $\beta=0.4$, $\delta=0.1$, $\gamma=0.4$ y $(x(0),y(0))=(10,5)$. En (a), RK4 con $h=0.1$ se compara con la referencia Crank--Nicolson con $h=10^{-4}$; en (b) se muestra la órbita calculada con esa referencia.}
     \label{fig:lotka-trayectorias}
 \end{figure}
 
@@ -191,10 +195,253 @@ La infraestructura exige las cinco derivadas analíticas $\partial f/\partial x$
 
 El Problema 2 define infraestructura general y no solicita por sí solo un caso numérico independiente. Por ello, la Tabla~\ref{tab:control-problem} resume propiedades de interfaz y pruebas funcionales sin atribuir optimalidad global ni resultados numéricos no demostrados.
 
+\clearpage
+\section{Problema 3: método de barrido hacia adelante y hacia atrás}
+
+\subsection{Algoritmo FBSM}
+
+Dado un control inicial nodal $u^{(0)}$, el método de barrido hacia adelante y hacia atrás alterna las siguientes operaciones:
+\begin{enumerate}
+    \item integrar el estado hacia adelante con $x(t_0)=x_0$;
+    \item integrar el adjunto hacia atrás con $p(T)=\nabla\Phi(x(T))$;
+    \item calcular en cada nodo un minimizador puntual
+    \begin{equation}
+        \widetilde u^{(k)}(t_i)
+        \in \operatorname*{arg\,min}_{u\in U}
+        H\bigl(t_i,x^{(k)}(t_i),p^{(k)}(t_i),u\bigr);
+    \end{equation}
+    \item aplicar relajación y proyección,
+    \begin{equation}
+        u^{(k+1)}=(1-\omega)u^{(k)}+\omega\widetilde u^{(k)},
+        \qquad u^{(k+1)}\leftarrow\Pi_U\bigl(u^{(k+1)}\bigr).
+    \end{equation}
+\end{enumerate}
+
+La integración hacia atrás se implementa por reversión temporal, conservando los pasos efectivos de la grilla en orden inverso. El criterio de parada requiere simultáneamente un cambio relativo pequeño del costo y del control. Esta segunda condición evita declarar convergencia sólo porque el costo se ha aplanado numéricamente mientras el control aún cambia de forma apreciable.
+
+\subsection{Validación con un LQR escalar}
+
+Se considera
+\begin{equation}
+    \dot x=ax+bu,
+    \qquad
+    J(u)=\frac{1}{2}s x(T)^2
+    +\frac{1}{2}\int_0^T\left(qx(t)^2+ru(t)^2\right)dt,
+\end{equation}
+con $a=-1$, $b=q=r=s=1$, $x(0)=1$ y $T=2$. La condición de estacionariedad entrega $u^*=-(b/r)p$. Al proponer $p(t)=P(t)x(t)$ se obtiene la ecuación de Riccati
+\begin{equation}
+    -\dot P=2aP-\frac{b^2}{r}P^2+q,
+    \qquad P(T)=s.
+\end{equation}
+Si $d=\sqrt{a^2+b^2q/r}$ y $P_{\pm}=\frac{r}{b^2}(a\pm d)$, entonces
+\begin{equation}
+    \frac{P(t)-P_+}{P(t)-P_-}
+    =\frac{s-P_+}{s-P_-}\exp\bigl(2d(t-T)\bigr).
+\end{equation}
+
+La referencia se construye mediante la clase \texttt{ProblemaLQR}, que integra la ecuación de Riccati independientemente del FBSM genérico. Esta separación es importante: la comparación no reutiliza dentro del FBSM la solución con la cual se valida.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.86\textwidth]{../resultados_graficos/3_fbsm/3a_fbsm_trayectorias.png}
+    \caption{Estado, control e historia de costo del FBSM en el LQR escalar, usando $h=0.01$.}
+    \label{fig:fbsm-lqr-trayectorias}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{minipage}[t]{0.49\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{../resultados_graficos/3_fbsm/3b_fbsm_vs_riccati.png}
+        \small (a) Controles obtenidos con FBSM y Riccati.
+    \end{minipage}
+    \hfill
+    \begin{minipage}[t]{0.49\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{../resultados_graficos/3_fbsm/3b_error_l2_vs_h.png}
+        \small (b) Error $L^2$ del control al refinar la grilla.
+    \end{minipage}
+    \caption{Validación independiente del FBSM para el LQR. Se comparan $h\in\{0.1,0.05,0.025,0.01\}$.}
+    \label{fig:fbsm-riccati}
+\end{figure}
+
+Las trayectorias del control FBSM y del control de Riccati son visualmente indistinguibles en la escala mostrada. Además, el error $L^2$ disminuye de manera aproximadamente lineal en la gráfica log--log al refinar $h$, lo que respalda la consistencia de la discretización y de la integración del sistema estado--adjunto. Esta comparación valida el método en un caso convexo con solución de referencia, pero no constituye por sí sola una garantía para problemas no lineales generales.
+
+\subsection{Vacunación óptima en un modelo SIR}
+
+El segundo caso considera
+\begin{equation}
+    \dot S=-\beta SI-uS,
+    \qquad
+    \dot I=\beta SI-\gamma I,
+\end{equation}
+con $S(0)=0.99$, $I(0)=0.01$, $\beta=0.3$, $\gamma=0.1$, $u(t)\in[0,0.4]$ y costo
+\begin{equation}
+    J(u)=\int_0^T\left(AI(t)+\frac{B}{2}u(t)^2\right)dt.
+\end{equation}
+El Hamiltoniano es
+\begin{equation}
+    H=AI+\frac{B}{2}u^2
+    +p_S(-\beta SI-uS)+p_I(\beta SI-\gamma I),
+\end{equation}
+y la condición de estacionariedad da el control proyectado
+\begin{equation}
+    u^*(t)=\Pi_{[0,u_{\max}]}
+    \left(\frac{p_S(t)S(t)}{B}\right).
+\end{equation}
+Como no hay costo terminal, $p_S(T)=p_I(T)=0$.
+
+Para este sistema se utiliza Crank--Nicolson, $T=50$, $h=0.5$ y una relajación fija $\omega=0.2$. Esta elección es deliberada: la relajación general $\omega=0.99$, adecuada para el LQR, produce en este caso un ciclo de dos puntos; reducir $\omega$ amortigua la actualización y permite estabilizar la iteración. Se comparan $A/B=10$ y $A/B=1$.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{minipage}[t]{0.49\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{../resultados_graficos/3_fbsm/3c_sir_trayectorias.png}
+        \small (a) Estados y control para $A/B=10$.
+    \end{minipage}
+    \hfill
+    \begin{minipage}[t]{0.49\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{../resultados_graficos/3_fbsm/3c_sir_comparacion_ab.png}
+        \small (b) Comparación del control para $A/B=10$ y $A/B=1$.
+    \end{minipage}
+    \caption{Soluciones FBSM del problema SIR de vacunación.}
+    \label{fig:sir-fbsm}
+\end{figure}
+
+Al aumentar $A/B$, las infecciones son relativamente más costosas que la vacunación. En consecuencia, el control para $A/B=10$ satura inicialmente en $u_{\max}=0.4$ y permanece por encima del control correspondiente a $A/B=1$ durante la fase inicial. En ambos casos la vacunación disminuye progresivamente a medida que cae la población susceptible y el beneficio marginal del control se reduce.
+
+\clearpage
+\section{Problema 4: método de gradiente proyectado}
+
+\subsection{Gradiente reducido y dirección proyectada}
+
+Para un control nodal $u$, se integra el estado y luego el adjunto. El gradiente reducido del funcional se evalúa mediante
+\begin{equation}
+    g(t)=\frac{\partial H}{\partial u}
+    =\frac{\partial L}{\partial u}
+    +\left(\frac{\partial f}{\partial u}\right)^{\mathsf T}p.
+\end{equation}
+La dirección factible se define por
+\begin{equation}
+    v=\Pi_U(u-g)-u.
+\end{equation}
+Por construcción, $u+v$ pertenece al conjunto admisible y $v=0$ es una condición de estacionariedad proyectada.
+
+Después de la primera iteración, el paso inicial de la búsqueda de línea se estima con una regla espectral de Barzilai--Borwein,
+\begin{equation}
+    t_{\mathrm{BB}}=\frac{\langle s,s\rangle_{L^2}}
+    {\langle s,y\rangle_{L^2}},
+    \qquad
+    s=u^{(k)}-u^{(k-1)},
+    \quad y=g^{(k)}-g^{(k-1)},
+\end{equation}
+y se recorta al intervalo $[t_{\min},1]$. Si el denominador no es positivo o no es finito, se usa el valor seguro $1$.
+
+El paso se acepta mediante una condición de Armijo no monótona:
+\begin{equation}
+    J(u+t v)
+    \leq \widehat J_k+a t\langle g,v\rangle_{L^2},
+    \qquad
+    \widehat J_k=\max\{J_{k-r+1},\ldots,J_k\}.
+\end{equation}
+En los experimentos se usan $r=10$, $a=10^{-4}$, factor de reducción $b=0.5$, $t_{\min}=10^{-12}$ y a lo más 50 reducciones. La no monotonía permite aceptar pasos útiles aunque produzcan un aumento transitorio respecto del último costo, manteniendo control sobre una ventana reciente.
+
+\subsection{Protocolo de comparación}
+
+FBSM y gradiente proyectado parten de controles nulos independientes y emplean la misma grilla y el mismo integrador en cada caso. Los costos finales se recalculan con una rutina común, en vez de comparar directamente historiales internos que tienen semánticas diferentes. En LQR se usa RK4 con $h=0.05$ y tolerancia $10^{-5}$; en SIR se usa Crank--Nicolson con $T=50$, $h=0.5$ y tolerancia $10^{-6}$. Para FBSM se emplea $\omega=0.99$ en LQR y $\omega=0.2$ en SIR.
+
+El residuo reportado mide la estacionariedad proyectada y debe interpretarse como una medida de primer orden. Los tiempos corresponden a una sola ejecución y sólo se usan de manera exploratoria.
+
+\subsection{Resultados en el LQR}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.82\textwidth]{../resultados_graficos/4_gradiente_proyectado/lqr_comparison.png}
+    \caption{Comparación de los controles LQR obtenidos con FBSM, gradiente proyectado y Riccati.}
+    \label{fig:lqr-comparacion-metodos}
+\end{figure}
+
+\begin{table}[htbp]
+    \centering
+    \caption{Comparación numérica para el LQR. Los tiempos son exploratorios.}
+    \label{tab:lqr-comparacion}
+    \small
+    \begin{tabular}{lrrrrr}
+        \toprule
+        Método & $J$ común & Error $L^2$ Riccati & Brecha relativa & Residuo & Iter. \\
+        \midrule
+        FBSM & $0.20827323$ & $5.23\times10^{-5}$ & $2.51\times10^{-7}$ & $1.53\times10^{-6}$ & 44 \\
+        Gradiente proyectado & $0.20827401$ & $7.92\times10^{-4}$ & $3.98\times10^{-6}$ & $8.98\times10^{-4}$ & 4 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Ambos controles reproducen visualmente la referencia de Riccati y alcanzan costos prácticamente iguales. FBSM queda más cerca de la referencia tanto en error $L^2$ como en residuo de estacionariedad. El gradiente proyectado requiere menos iteraciones nativas y, en la corrida registrada, menos tiempo; sin embargo, una iteración de ambos métodos no tiene el mismo costo ni la misma semántica, por lo que el conteo no debe interpretarse como una tasa de convergencia directamente comparable.
+
+\subsection{Resultados en el problema SIR}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{minipage}[t]{0.49\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{../resultados_graficos/4_gradiente_proyectado/sir_a_over_b_1.png}
+        \small (a) Razón $A/B=1$.
+    \end{minipage}
+    \hfill
+    \begin{minipage}[t]{0.49\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{../resultados_graficos/4_gradiente_proyectado/sir_a_over_b_10.png}
+        \small (b) Razón $A/B=10$.
+    \end{minipage}
+    \caption{Comparación entre FBSM y gradiente proyectado en el modelo SIR.}
+    \label{fig:sir-comparacion-metodos}
+\end{figure}
+
+\begin{table}[htbp]
+    \centering
+    \caption{Comparación numérica para el problema SIR.}
+    \label{tab:sir-comparacion}
+    \small
+    \begin{tabular}{clrrr}
+        \toprule
+        $A/B$ & Método & $J$ común & Residuo & Iter. \\
+        \midrule
+        1 & FBSM & $0.47778522$ & $1.97\times10^{-6}$ & 51 \\
+        1 & Gradiente proyectado & $0.47778648$ & $5.77\times10^{-4}$ & 18 \\
+        10 & FBSM & $2.42264356$ & $3.44\times10^{-6}$ & 58 \\
+        10 & Gradiente proyectado & $2.42264322$ & $8.18\times10^{-5}$ & 14 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Las trayectorias de ambos métodos se superponen en la escala de las figuras y los costos comunes coinciden hasta varias cifras. Para $A/B=1$, FBSM obtiene un costo ligeramente menor; para $A/B=10$, el gradiente proyectado obtiene un costo ligeramente menor, aunque la diferencia es del orden de $10^{-7}$. En los dos casos FBSM alcanza un residuo de estacionariedad menor, mientras que el gradiente proyectado termina en menos iteraciones. Dado que el problema SIR es no lineal y no se ha demostrado convexidad global del funcional reducido, estos resultados muestran acuerdo entre dos métodos y satisfacción aproximada de condiciones de primer orden, no optimalidad global.
+
+\section{Decisiones clave de diseño numérico}
+
+\begin{enumerate}
+    \item \textbf{Una interfaz común para todas las EDO.} Los métodos explícitos e implícitos comparten la misma representación de solución, lo que permite reutilizar el integrador en el estado, el adjunto y Riccati.
+
+    \item \textbf{Derivadas analíticas obligatorias.} El problema de control no reemplaza silenciosamente derivadas ausentes por diferencias finitas. Esto evita mezclar error de discretización temporal con error de diferenciación numérica.
+
+    \item \textbf{Referencias independientes.} Lotka--Volterra y Van der Pol se comparan con referencias numéricas declaradas como tales. El LQR se valida además contra Riccati, calculada por una ruta independiente del FBSM.
+
+    \item \textbf{Relajación dependiente del problema.} Se usa $\omega=0.99$ en el LQR, pero $\omega=0.2$ en SIR para eliminar una oscilación de dos puntos. La relajación se trata como una decisión de estabilidad iterativa y no como un parámetro universal.
+
+    \item \textbf{Comparación bajo una métrica común.} FBSM y gradiente proyectado parten del mismo control inicial, usan la misma grilla y tienen sus costos finales recalculados con una misma rutina. Los historiales e iteraciones nativas se conservan, pero no se equiparan artificialmente.
+
+    \item \textbf{Cautela en la interpretación.} Los tiempos de cómputo provienen de corridas individuales; las referencias numéricas tienen error propio; y en SIR los residuos de primer orden no prueban optimalidad global.
+\end{enumerate}
+
 \section{Conclusiones}
 
-La interfaz unificada permite aplicar cinco esquemas a sistemas vectoriales y conservar una representación común de sus soluciones. En Lotka--Volterra, el refinamiento reduce la discrepancia respecto de la referencia numérica y RK4 reproduce las trayectorias de referencia con alta concordancia visual para el paso mostrado. En Van der Pol con $\mu=1000$, los resultados observados evidencian que los métodos explícitos requieren pasos mucho menores para evitar valores no finitos, mientras que Euler implícito y Crank--Nicolson mantienen resultados finitos con pasos mayores; las conclusiones de precisión quedan condicionadas por la referencia Crank--Nicolson con $h=10^{-5}$.
+La interfaz unificada de EDO permite aplicar cinco esquemas a sistemas vectoriales y reutilizar la misma infraestructura en problemas de control. En Lotka--Volterra, el refinamiento reduce la discrepancia respecto de la referencia numérica y RK4 reproduce las trayectorias con alta concordancia visual para el paso mostrado. En Van der Pol con $\mu=1000$, los experimentos evidencian la restricción de estabilidad de los métodos explícitos y la mayor robustez de Euler implícito y Crank--Nicolson con pasos grandes; las afirmaciones de precisión permanecen condicionadas por la referencia Crank--Nicolson con $h=10^{-5}$.
 
-La formulación del Problema 2 encapsula dinámica, costos, derivadas, horizonte y restricciones en un objeto reutilizable. La evaluación consistente del costo, el sistema adjunto, la transversalidad y la minimización puntual establecen la base para los algoritmos posteriores. Los Problemas 3 y 4 permanecen pendientes y no se analizan en este informe.
+La clase general de control encapsula dinámica, costos, derivadas, horizonte y restricciones, y proporciona de manera coherente el Hamiltoniano, el sistema adjunto, la transversalidad, la proyección y la evaluación del costo. Sobre esta base, FBSM reproduce la solución de Riccati en el LQR y genera una política epidemiológicamente coherente en SIR: una penalización relativa mayor de las infecciones produce vacunación inicial más intensa.
+
+El gradiente proyectado, complementado con paso Barzilai--Borwein y Armijo no monótono, entrega controles prácticamente coincidentes con FBSM en los dos casos de estudio. En LQR, FBSM presenta menor error respecto de Riccati y menor residuo; el gradiente proyectado alcanza una solución cercana en menos iteraciones nativas. En SIR, ambos métodos producen costos y trayectorias casi idénticos, aunque FBSM termina con residuos menores. Por lo tanto, los resultados apoyan la corrección de ambas implementaciones y muestran que la elección del método depende del equilibrio entre precisión de estacionariedad, robustez iterativa y costo computacional.
+
+Finalmente, la validación más sólida corresponde al LQR, donde existe una referencia independiente. Para el SIR, la coincidencia entre métodos y los residuos pequeños son evidencia numérica favorable, pero no reemplazan un análisis teórico de existencia, unicidad o convexidad global.
 
 \end{document}

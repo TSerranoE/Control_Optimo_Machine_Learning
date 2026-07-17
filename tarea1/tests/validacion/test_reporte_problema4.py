@@ -288,7 +288,8 @@ def test_runner_sir_quick_mode_changes_only_horizon_and_keeps_case_order(monkeyp
 def test_artifact_directory_has_narrow_ignore_rule():
     reglas = Path(".gitignore").read_text().splitlines()
 
-    assert "tarea1/resultados_graficos/4_gradiente_proyectado/" in reglas
+    # Los PNGs de resultados se versionan (excepción en .gitignore)
+    assert "!tarea1/resultados_graficos/**/*.png" in reglas
     assert "*.tex" not in reglas
 
 
