@@ -496,3 +496,36 @@ for figura in figuras_problema3:
 # %%
 for ruta in sorted(RUTA_PROBLEMA3.glob("*.png")):
     print(ruta)
+
+# %% [markdown]
+# ## Problema 4c - Comparación FBSM y gradiente proyectado
+#
+# Ambos métodos parten del mismo control nulo y usan la misma grilla uniforme
+# en cada caso. Los costos finales se recalculan con una cuadratura común,
+# mientras que los historiales y conteos de iteraciones conservan la semántica
+# nativa de cada método. En el modelo SIR, el costo y el residuo de
+# estacionariedad son indicadores de primer orden: not evidence of global optimality.
+
+# %%
+from src.reporte_problema4 import generar_reporte_problema4
+
+RUTA_PROBLEMA4 = RUTA_BASE / "4_gradiente_proyectado"
+MODO_RAPIDO_PROBLEMA4 = os.getenv("TAREA1_REPORTE_RAPIDO") == "1"
+resultado_problema4 = generar_reporte_problema4(
+    RUTA_PROBLEMA4, modo_rapido=MODO_RAPIDO_PROBLEMA4
+)
+
+print("\nProblema 4c - Comparación LQR")
+print(resultado_problema4.tabla_lqr.to_string(index=False))
+print("\nProblema 4c - Comparación SIR")
+print(resultado_problema4.tabla_sir.to_string(index=False))
+
+figuras_problema4 = resultado_problema4.figuras
+if "ipykernel" in sys.modules:
+    plt.show(block=False)
+for figura in figuras_problema4:
+    plt.close(figura)
+
+# %%
+for ruta in sorted(RUTA_PROBLEMA4.iterdir()):
+    print(ruta)

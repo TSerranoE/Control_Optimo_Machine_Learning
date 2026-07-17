@@ -84,26 +84,12 @@ def test_notebook_muestra_y_cierra_figuras_sin_ipython(monkeypatch):
     ruta_notebook = Path("tarea1/notebooks/ejecucion_tarea1.py")
     codigo = ruta_notebook.read_text(encoding="utf-8")
     modulo = ast.parse(codigo)
-    nodos = [
-        nodo
-        for nodo in modulo.body
-        if (
-            isinstance(nodo, ast.Assign)
-            and any(
-                isinstance(destino, ast.Name)
-                and destino.id == "figuras_problema3"
-                for destino in nodo.targets
-            )
-        )
-        or (
-            isinstance(nodo, ast.If)
-            and "plt.show" in ast.unparse(nodo)
-        )
-        or (
-            isinstance(nodo, ast.For)
-            and ast.unparse(nodo.iter) == "figuras_problema3"
-        )
-    ]
+    inicio = next(
+        indice for indice, nodo in enumerate(modulo.body)
+        if isinstance(nodo, ast.Assign)
+        and any(isinstance(destino, ast.Name) and destino.id == "figuras_problema3" for destino in nodo.targets)
+    )
+    nodos = modulo.body[inicio:inicio + 3]
     figuras = [object() for _ in range(5)]
     llamadas_show = []
     figuras_cerradas = []
@@ -161,3 +147,40 @@ def test_notebook_documenta_secciones_y_riccati():
     assert r"-\dot{P}" in notebook
     assert "error en norma" in notebook.lower()
     assert "omega=0.2" in notebook
+
+
+def test_notebook_4c_uses_public_report_and_documents_interpretation():
+    notebook = Path("tarea1/notebooks/ejecucion_tarea1.py").read_text(encoding="utf-8")
+
+    assert "## Problema 4c" in notebook
+    assert "from src.reporte_problema4 import generar_reporte_problema4" in notebook
+    assert 'RUTA_BASE / "4_gradiente_proyectado"' in notebook
+    assert "generar_reporte_problema4(" in notebook
+    assert "modo_rapido=MODO_RAPIDO_PROBLEMA4" in notebook
+    assert "tabla_lqr.to_string(index=False)" in notebook
+    assert "tabla_sir.to_string(index=False)" in notebook
+    assert "not evidence of global optimality" in notebook
+
+
+def test_notebook_4c_shows_and_closes_all_report_figures(monkeypatch):
+    codigo = Path("tarea1/notebooks/ejecucion_tarea1.py").read_text(encoding="utf-8")
+    modulo = ast.parse(codigo)
+    inicio = next(
+        indice for indice, nodo in enumerate(modulo.body)
+        if isinstance(nodo, ast.Assign)
+        and any(isinstance(destino, ast.Name) and destino.id == "figuras_problema4" for destino in nodo.targets)
+    )
+    nodos = modulo.body[inicio:inicio + 3]
+    figuras = [object() for _ in range(3)]
+    llamadas_show, figuras_cerradas = [], []
+
+    monkeypatch.setitem(sys.modules, "ipykernel", object())
+    monkeypatch.setattr(plt, "show", lambda **kwargs: llamadas_show.append(kwargs))
+    monkeypatch.setattr(plt, "close", figuras_cerradas.append)
+    exec(
+        compile(ast.Module(body=nodos, type_ignores=[]), "notebook-4c", "exec"),
+        {"plt": plt, "resultado_problema4": type("R", (), {"figuras": figuras})(), "sys": sys},
+    )
+
+    assert llamadas_show == [{"block": False}]
+    assert figuras_cerradas == figuras

@@ -260,24 +260,36 @@ def test_runner_uses_fresh_zero_controls_and_native_solver_settings(monkeypatch)
 
 def test_runner_sir_quick_mode_changes_only_horizon_and_keeps_case_order(monkeypatch):
     factory_calls = []
+    solver_calls = []
 
     def fake_factory(*args):
         factory_calls.append(args)
         return SimpleNamespace(_m=1)
 
     monkeypatch.setattr(reporte, "crear_problema_sir", fake_factory)
-    monkeypatch.setattr(reporte, "_ejecutar_metodos", lambda *args, **kwargs: [])
+    monkeypatch.setattr(
+        reporte, "_ejecutar_metodos",
+        lambda *args, **kwargs: solver_calls.append(kwargs) or [],
+    )
 
     quick_grid, quick_rows, _ = reporte._resolver_sir(True)
     official_grid, official_rows, _ = reporte._resolver_sir(False)
 
-    assert reporte._configuracion_ejecucion(True) == (0.05, 1e-5, 8.0, 0.5, 1e-6)
-    assert reporte._configuracion_ejecucion(False) == (0.01, 1e-6, 50.0, 0.5, 1e-6)
+    assert reporte._configuracion_ejecucion(True) == (0.05, 1e-5, 8.0, 0.5, 1e-6, 200)
+    assert reporte._configuracion_ejecucion(False) == (0.05, 1e-5, 50.0, 0.5, 1e-6, 100)
     assert (quick_grid[-1], len(quick_grid), quick_rows) == (8.0, 17, [])
     assert (official_grid[-1], len(official_grid), official_rows) == (50.0, 101, [])
     assert [(call[2], call[-1]) for call in factory_calls] == [
         (1.0, 8.0), (10.0, 8.0), (1.0, 50.0), (10.0, 50.0),
     ]
+    assert [call["max_iter"] for call in solver_calls] == [200, 200, 100, 100]
+
+
+def test_artifact_directory_has_narrow_ignore_rule():
+    reglas = Path(".gitignore").read_text().splitlines()
+
+    assert "tarea1/resultados_graficos/4_gradiente_proyectado/" in reglas
+    assert "*.tex" not in reglas
 
 
 def _artifact_inputs():
