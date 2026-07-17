@@ -69,3 +69,6 @@ Tarea_2.pdf
 *.pdf
 *.csv
 *.txt
+
+# Artefactos oficiales generados del Problema 4c (incluye tablas TeX)
+tarea1/resultados_graficos/4_gradiente_proyectado/

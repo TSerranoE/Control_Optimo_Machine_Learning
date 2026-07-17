@@ -206,8 +206,8 @@ def _dinamica_riccati(referencia: Any, t: float, x: np.ndarray) -> np.ndarray:
     return referencia._f(t, x, referencia.control_riccati(t, x))
 
 
-def _configuracion_ejecucion(modo_rapido: bool) -> tuple[float, float, float, float, float]:
-    return (0.05, 1e-5, 8.0, 0.5, 1e-6) if modo_rapido else (0.01, 1e-6, 50.0, 0.5, 1e-6)
+def _configuracion_ejecucion(modo_rapido: bool) -> tuple[float, float, float, float, float, int]:
+    return (0.05, 1e-5, 8.0, 0.5, 1e-6, 200) if modo_rapido else (0.05, 1e-5, 50.0, 0.5, 1e-6, 100)
 
 
 def _etiqueta_historia(metodo: str, iteraciones: int) -> str:
@@ -272,7 +272,7 @@ def _ejecutar_metodos(
 
 
 def _resolver_lqr(modo_rapido: bool) -> tuple[np.ndarray, list[_FilaComparacion], np.ndarray, float]:
-    h, tol, _, _, _ = _configuracion_ejecucion(modo_rapido)
+    h, tol, _, _, _, _ = _configuracion_ejecucion(modo_rapido)
     final = 2.0
     tiempos = np.linspace(0.0, final, int(round(final / h)) + 1)
     problema = crear_problema_lqr_fbsm(-1.0, 1.0, 1.0, 1.0, 1.0, final, 1.0, h)
@@ -313,14 +313,14 @@ def _tablas_lqr(tiempos, filas, control_ref, costo_ref) -> pd.DataFrame:
 
 
 def _resolver_sir(modo_rapido: bool):
-    _, _, final, h, tol = _configuracion_ejecucion(modo_rapido)
+    _, _, final, h, tol, max_iter = _configuracion_ejecucion(modo_rapido)
     tiempos = np.linspace(0.0, final, int(round(final / h)) + 1)
     filas, problemas = [], {}
     for razon in (1.0, 10.0):
         problema = crear_problema_sir(0.3, 0.1, razon, 1.0, 0.4, 0.99, 0.01, final)
         problemas[razon] = problema
         filas.extend(_ejecutar_metodos(
-            problema, tiempos, h, "crank_nicolson", max_iter=200,
+            problema, tiempos, h, "crank_nicolson", max_iter=max_iter,
             tol=tol, omega=0.2, orden_caso=razon,
         ))
     return tiempos, _ordenar_filas(filas), problemas
