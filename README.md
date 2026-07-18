@@ -148,3 +148,7 @@ Las pruebas automáticas se encuentran en [`tarea1/tests/`](./tarea1/tests/) y p
 ```bash
 PYTHONPATH=tarea1/src:tarea1 pytest -q tarea1/tests
 ```
+
+## Estado de la entrega
+
+La Tarea 1 se encuentra finalizada. El informe, el notebook de ejecución, el código fuente y los resultados numéricos están disponibles en la carpeta `tarea1/`.
