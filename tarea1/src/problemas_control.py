@@ -797,7 +797,7 @@ class ControlProblem:
         p = np.asarray(p, dtype=float)
 
         def objetivo(u: np.ndarray) -> float:
-            return self.hamiltoniano(t, x, p, u)
+            return self.hamiltoniano(t, x, p, np.atleast_1d(u))
 
         if self._m == 1:
             if self._conjunto is not None and self._conjunto.es_caja():

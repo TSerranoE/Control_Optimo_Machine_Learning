@@ -16,48 +16,66 @@
 # ---
 
 # %% [markdown]
-# # Notebook de ejecución - Tarea 1
+# # Ejecución de la Tarea 1
 #
-# Este notebook agrupa los experimentos numéricos solicitados en la Tarea 1:
-# validación de integradores, resolución de problemas de control óptimo y
-# generación de figuras comparativas.
+# Este notebook ejecuta los experimentos correspondientes a los cuatro
+# problemas de la tarea y genera las tablas y figuras utilizadas en el informe.
 
 # %% [markdown]
-# ## Configuración común
+# ## Configuración
 
 # %%
 import os
 import sys
-import warnings
 from pathlib import Path
-
-# Permite imports absolutos tanto en Jupyter como al ejecutar el script.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import matplotlib
 import numpy as np
+import pandas as pd
 
-# Backend no interactivo para ejecución por lotes.
+
+def encontrar_raiz_repositorio() -> Path:
+    """Busca la carpeta que contiene el directorio ``tarea1``."""
+    candidatos = [Path.cwd(), *Path.cwd().parents]
+    if "__file__" in globals():
+        archivo = Path(__file__).resolve()
+        candidatos = [archivo.parent, *archivo.parents, *candidatos]
+
+    for candidato in candidatos:
+        if (candidato / "tarea1" / "src").is_dir():
+            return candidato
+
+    raise RuntimeError(
+        "No se encontró la raíz de Control_Optimo_Machine_Learning. "
+        "Ejecute el notebook dentro del repositorio."
+    )
+
+
+RAIZ_REPOSITORIO = encontrar_raiz_repositorio()
+RUTA_TAREA1 = RAIZ_REPOSITORIO / "tarea1"
+RUTA_SRC = RUTA_TAREA1 / "src"
+
+for ruta in (RUTA_TAREA1, RUTA_SRC):
+    ruta_str = str(ruta)
+    if ruta_str not in sys.path:
+        sys.path.insert(0, ruta_str)
+
 if "ipykernel" not in sys.modules:
     matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
 
-# El warning de fsolve sobre "no making good progress" es benigno para
-# campos lineales con pasos finos; la solución sigue convergiendo.
-warnings.filterwarnings(
-    "ignore",
-    category=RuntimeWarning,
-    message=".*not making good progress.*",
-)
-
 from src.integradores import EDOSolver
+from src.problemas_control import ConjuntoAdmisible, ControlProblem
+from src.reporte_problema3 import generar_reporte_problema3
+from src.reporte_problema4 import generar_reporte_problema4
 from src.validacion_problema1 import (
     campo_lotka_volterra,
     campo_van_der_pol,
     crear_referencia,
     ejecutar_experimento,
 )
+from src.validacion_problema3 import crear_problema_lqr_fbsm
 from utils.visualizacion import (
     graficar_diagrama_fase,
     graficar_error_vs_h,
@@ -65,32 +83,100 @@ from utils.visualizacion import (
     tabla_resultados,
 )
 
-RUTA_BASE = Path("tarea1/resultados_graficos")
-RUTA_LOTKA = RUTA_BASE / "1_lotka_volterra"
-RUTA_VDP = RUTA_BASE / "1_van_der_pol"
+RUTA_RESULTADOS = RUTA_TAREA1 / "resultados_graficos"
+RUTA_BASE = RUTA_RESULTADOS
+RUTA_LOTKA = RUTA_RESULTADOS / "1_lotka_volterra"
+RUTA_VDP = RUTA_RESULTADOS / "1_van_der_pol"
+RUTA_PROBLEMA3 = RUTA_RESULTADOS / "3_fbsm"
+RUTA_PROBLEMA4 = RUTA_BASE / "4_gradiente_proyectado"
 
-for ruta in [RUTA_LOTKA, RUTA_VDP]:
+for ruta in (RUTA_LOTKA, RUTA_VDP, RUTA_PROBLEMA3, RUTA_PROBLEMA4):
     ruta.mkdir(parents=True, exist_ok=True)
 
-hs = [0.1, 0.05, 0.025, 0.0125, 0.00625]
-metodos = ["euler_progresivo", "euler_implicito", "heun", "crank_nicolson", "rk4"]
+MODO_RAPIDO = os.getenv("TAREA1_REPORTE_RAPIDO") == "1"
 
-print("Configuración lista.")
-print(f"Pasos temporales: {hs}")
-print(f"Métodos: {metodos}")
+print(f"Raíz del repositorio: {RAIZ_REPOSITORIO}")
+print(f"Modo rápido: {MODO_RAPIDO}")
+
+
+# %%
+def mostrar_figuras(figuras) -> None:
+    """Muestra las figuras."""
+    for figura in figuras:
+        figura.show()
+
+
+def mostrar_tabla(tabla: pd.DataFrame) -> None:
+    """Muestra una tabla."""
+    print(tabla.to_string(index=False))
+
 
 # %% [markdown]
-# ## Problema 1b - Lotka-Volterra
+# # Problema 1: integrador numérico de EDO
+
+# %% [markdown]
+# ## Problema 1(a): interfaz de `EDOSolver` y `EDOSolution`
+#
+# Se integra el problema escalar $\dot{x}=-x$, $x(0)=1$, mediante los cinco
+# esquemas implementados. La solución exacta en $t=1$ es $e^{-1}$.
+
+# %%
+solver = EDOSolver()
+metodos = [
+    "euler_progresivo",
+    "euler_implicito",
+    "heun",
+    "crank_nicolson",
+    "rk4",
+]
+
+filas_interfaz = []
+for metodo in metodos:
+    solucion = solver.solve(
+        lambda t, x, u: -x,
+        np.array([1.0]),
+        (0.0, 1.0),
+        0.1,
+        method=metodo,
+        guardar_intermedios=(metodo == "rk4"),
+    )
+    filas_interfaz.append(
+        {
+            "método": metodo,
+            "nodos": len(solucion.tiempos),
+            "x(1)": solucion.estados[-1, 0],
+            "error final": abs(solucion.estados[-1, 0] - np.exp(-1.0)),
+        }
+    )
+
+tabla_interfaz = pd.DataFrame(filas_interfaz)
+tabla_interfaz
+
+
+# %%
+print("Tipo de solución:", type(solucion).__name__)
+print("Intervalo:", solucion.t_span)
+print("Forma de los estados:", solucion.estados.shape)
+print("Etapas intermedias disponibles:", solucion.intermedios is not None)
+
+
+# %% [markdown]
+# ## Problema 1(b)(i): sistema de Lotka--Volterra
+#
+# Se utilizan los parámetros establecidos en el enunciado:
+# $\alpha=1.1$, $\beta=0.4$, $\delta=0.1$, $\gamma=0.4$,
+# con $(x(0),y(0))=(10,5)$.
 
 # %%
 parametros_lotka = {
-    "alpha": 1.0,
-    "beta": 0.1,
-    "delta": 0.075,
-    "gamma": 1.5,
+    "alpha": 1.1,
+    "beta": 0.4,
+    "delta": 0.1,
+    "gamma": 0.4,
 }
 x0_lotka = np.array([10.0, 5.0])
 t0_lotka, tf_lotka = 0.0, 15.0
+hs_lotka = [0.1, 0.05, 0.025, 0.0125, 0.00625]
 
 resultados_lotka = ejecutar_experimento(
     campo_lotka_volterra,
@@ -98,34 +184,32 @@ resultados_lotka = ejecutar_experimento(
     t0_lotka,
     tf_lotka,
     parametros_lotka,
-    hs,
+    hs_lotka,
     metodos,
 )
 
-print("Tabla de resultados - Lotka-Volterra")
-print(tabla_resultados(resultados_lotka).to_string(index=False))
+tabla_lotka = tabla_resultados(resultados_lotka)
+tabla_lotka
 
-# %% [markdown]
-# ### Figuras de Lotka-Volterra
 
 # %%
 caption_error_lotka = (
     "Referencia: Crank-Nicolson con h=1e-4. "
-    "Parámetros: α=1.0, β=0.1, δ=0.075, γ=1.5, "
-    "x₀=[10, 5], t∈[0, 15]"
+    "Parámetros: α=1.1, β=0.4, δ=0.1, γ=0.4, "
+    "x₀=[10, 5], t∈[0, 15]."
 )
-
 fig_error_lotka = graficar_error_vs_h(
     resultados_lotka,
     ruta_salida=RUTA_LOTKA / "error_vs_h.png",
-    titulo="Lotka-Volterra: error vs paso temporal",
+    titulo="Lotka-Volterra: error según el paso temporal",
     metodo_referencia="Crank-Nicolson",
     h_referencia=1e-4,
     caption=caption_error_lotka,
 )
 
+
 # %%
-t_ref_lotka, x_ref_lotka = crear_referencia(
+t_ref_lotka, sol_ref_lotka = crear_referencia(
     campo_lotka_volterra,
     x0_lotka,
     t0_lotka,
@@ -135,397 +219,429 @@ t_ref_lotka, x_ref_lotka = crear_referencia(
     metodo="crank_nicolson",
 )
 
-resolutor_lotka = EDOSolver()
-solucion_lotka = resolutor_lotka.solve(
+solucion_lotka_rk4 = solver.solve(
     lambda t, x, u: campo_lotka_volterra(t, x, u, parametros_lotka),
     x0_lotka,
     (t0_lotka, tf_lotka),
-    hs[0],
+    0.1,
     method="rk4",
-)
-
-caption_series_lotka = (
-    "Referencia: Crank-Nicolson h=1e-4. Aproximación: RK4 h=0.1. "
-    "Componentes: x₁(t) y x₂(t). "
-    "Parámetros: α=1.0, β=0.1, δ=0.075, γ=1.5, x₀=[10, 5]"
 )
 
 fig_series_lotka = graficar_referencia_vs_aproximada(
     t_ref_lotka,
-    x_ref_lotka.estados,
-    solucion_lotka.tiempos,
-    solucion_lotka.estados,
+    sol_ref_lotka.estados,
+    solucion_lotka_rk4.tiempos,
+    solucion_lotka_rk4.estados,
     "Lotka-Volterra: evolución temporal",
     ruta_salida=RUTA_LOTKA / "series_temporales.png",
-    nombres_componentes=["x_1(t)", "x_2(t)"],
-    descripcion_referencia="Referencia (CN h=1e-4)",
-    descripcion_aproximacion="Aproximación (RK4 h=0.1)",
-    caption=caption_series_lotka,
-)
-
-caption_fase_lotka = (
-    "Calculado con Crank-Nicolson h=1e-4. "
-    "Parámetros: α=1.0, β=0.1, δ=0.075, γ=1.5, x₀=[10, 5]"
+    nombres_componentes=["Presas x(t)", "Depredadores y(t)"],
+    descripcion_referencia="Referencia (Crank-Nicolson, h=1e-4)",
+    descripcion_aproximacion="RK4 (h=0.1)",
+    caption=(
+        "Parámetros: α=1.1, β=0.4, δ=0.1, γ=0.4, "
+        "x₀=[10, 5], t∈[0, 15]."
+    ),
 )
 
 fig_fase_lotka = graficar_diagrama_fase(
-    x_ref_lotka.estados,
+    sol_ref_lotka.estados,
     "Lotka-Volterra: diagrama de fase",
     ruta_salida=RUTA_LOTKA / "diagrama_fase.png",
-    caption=caption_fase_lotka,
+    caption=(
+        "Crank-Nicolson con h=1e-4. "
+        "Parámetros: α=1.1, β=0.4, δ=0.1, γ=0.4, x₀=[10, 5]."
+    ),
 )
 
+mostrar_figuras([fig_error_lotka, fig_series_lotka, fig_fase_lotka])
+
+
 # %% [markdown]
-# ## Problema 1b - Van der Pol ($\mu = 0.1$)
+# ## Problema 1(b)(ii): oscilador de Van der Pol con $\mu=1000$
+#
+# Se comparan métodos explícitos e implícitos mediante el error respecto de una
+# referencia Crank--Nicolson y el tiempo de ejecución.
 
 # %%
-parametros_vdp_suave = {"mu": 0.1}
+parametros_vdp = {"mu": 1000.0}
 x0_vdp = np.array([2.0, 0.0])
-t0_vdp, tf_vdp_suave = 0.0, 20.0
+t0_vdp, tf_vdp = 0.0, 10.0
+h_referencia_vdp = 1e-5 if not MODO_RAPIDO else 1e-4
 
-resultados_vdp_suave = ejecutar_experimento(
+print("Calculando la referencia de Van der Pol...")
+_, solucion_ref_vdp = crear_referencia(
     campo_van_der_pol,
     x0_vdp,
     t0_vdp,
-    tf_vdp_suave,
-    parametros_vdp_suave,
-    hs,
-    metodos,
-)
-
-print("Tabla de resultados - Van der Pol (mu=0.1)")
-print(tabla_resultados(resultados_vdp_suave).to_string(index=False))
-
-# %%
-caption_error_vdp_suave = (
-    "Referencia: Crank-Nicolson con h=1e-4. "
-    "Parámetros: μ=0.1, x₀=[2, 0], t∈[0, 20]"
-)
-
-fig_error_vdp_suave = graficar_error_vs_h(
-    resultados_vdp_suave,
-    ruta_salida=RUTA_VDP / "error_vs_h_mu_0_1.png",
-    titulo="Van der Pol (μ=0.1): error vs paso temporal",
-    metodo_referencia="Crank-Nicolson",
-    h_referencia=1e-4,
-    caption=caption_error_vdp_suave,
-)
-
-# %%
-t_ref_vdp_suave, x_ref_vdp_suave = crear_referencia(
-    campo_van_der_pol,
-    x0_vdp,
-    t0_vdp,
-    tf_vdp_suave,
-    parametros_vdp_suave,
-    h=1e-4,
+    tf_vdp,
+    parametros_vdp,
+    h=h_referencia_vdp,
     metodo="crank_nicolson",
 )
 
-caption_fase_vdp_suave = (
-    "Calculado con Crank-Nicolson h=1e-4. "
-    "Parámetros: μ=0.1, x₀=[2, 0]"
+hs_explicitos_grandes = [1e-2, 5e-3, 2.5e-3, 1.25e-3]
+hs_implicitos = [0.1, 0.05, 0.025, 0.0125, 0.00625]
+hs_explicitos_pequenos = [1e-5, 5e-6] if not MODO_RAPIDO else [1e-4, 5e-5]
+
+resultados_vdp_explicitos = ejecutar_experimento(
+    campo_van_der_pol,
+    x0_vdp,
+    t0_vdp,
+    tf_vdp,
+    parametros_vdp,
+    hs_explicitos_grandes,
+    ["euler_progresivo", "heun", "rk4"],
+    h_referencia=h_referencia_vdp,
+    solucion_ref=solucion_ref_vdp,
 )
 
-fig_fase_vdp_suave = graficar_diagrama_fase(
-    x_ref_vdp_suave.estados,
-    "Van der Pol (μ=0.1): diagrama de fase",
-    ruta_salida=RUTA_VDP / "diagrama_fase_mu_0_1.png",
-    caption=caption_fase_vdp_suave,
+resultados_vdp_implicitos = ejecutar_experimento(
+    campo_van_der_pol,
+    x0_vdp,
+    t0_vdp,
+    tf_vdp,
+    parametros_vdp,
+    hs_implicitos,
+    ["euler_implicito", "crank_nicolson"],
+    h_referencia=h_referencia_vdp,
+    solucion_ref=solucion_ref_vdp,
 )
 
-# %% [markdown]
-# ## Problema 1b - Van der Pol ($\mu = 1000$): estabilidad vs precisión
-#
-# El objetivo es mostrar que los métodos explícitos requieren pasos
-# extremadamente pequeños para estabilidad, mientras que los implícitos
-# admiten pasos mucho mayores.
-#
-# Configuración stiff:
-# - `tf = 10` para los experimentos de error (explícitos e implícitos),
-#   suficiente para medir la estabilidad sin exceder el tiempo de cómputo.
-# - `tf = 1000` para el diagrama de fase, donde se necesita un horizonte
-#   largo para observar parte del ciclo límite de relajación
-#   (período ~1.6·μ ≈ 1600 para μ=1000).
-# - `h_referencia = 1e-5` para el caso stiff, calculado con los argumentos
-#   por defecto de fsolve para reducir el tiempo de cómputo.
+resultados_vdp_paso_pequeno = ejecutar_experimento(
+    campo_van_der_pol,
+    x0_vdp,
+    t0_vdp,
+    tf_vdp,
+    parametros_vdp,
+    hs_explicitos_pequenos,
+    ["euler_progresivo", "rk4"],
+    h_referencia=h_referencia_vdp,
+    solucion_ref=solucion_ref_vdp,
+)
+
+resultados_vdp = (
+    resultados_vdp_explicitos
+    + resultados_vdp_implicitos
+    + resultados_vdp_paso_pequeno
+)
+
+tabla_vdp = tabla_resultados(resultados_vdp)
+tabla_vdp
+
 
 # %%
-parametros_vdp_stiff = {"mu": 1000.0}
-tf_vdp_stiff = 10.0
-tf_vdp_stiff_fase = 3000.0
-h_referencia_stiff = 1e-5
-argumentos_fsolve_stiff = {"xtol": 1e-10, "maxfev": 200}
-
-# Referencia única para todos los experimentos stiff con tf=10.
-print("Calculando referencia stiff (esto puede tardar unos minutos)...")
-_, solucion_ref_vdp_stiff = crear_referencia(
-    campo_van_der_pol,
-    x0_vdp,
-    t0_vdp,
-    tf_vdp_stiff,
-    parametros_vdp_stiff,
-    h=h_referencia_stiff,
-    metodo="crank_nicolson",
-    argumentos_fsolve=argumentos_fsolve_stiff,
+caption_vdp = (
+    f"Referencia: Crank-Nicolson con h={h_referencia_vdp:g}. "
+    "Parámetros: μ=1000, x₀=[2, 0], t∈[0, 10]."
 )
 
-# Experimento A: métodos explícitos con pasos grandes (inestables)
-hs_expl_grandes = [0.01, 0.005, 0.0025, 0.00125]
-metodos_expl = ["euler_progresivo", "heun", "rk4"]
-
-resultados_vdp_expl_grandes = ejecutar_experimento(
-    campo_van_der_pol,
-    x0_vdp,
-    t0_vdp,
-    tf_vdp_stiff,
-    parametros_vdp_stiff,
-    hs_expl_grandes,
-    metodos_expl,
-    h_referencia=h_referencia_stiff,
-    solucion_ref=solucion_ref_vdp_stiff,
-)
-
-print("Experimento A - Explícitos con pasos grandes")
-print(tabla_resultados(resultados_vdp_expl_grandes).to_string(index=False))
-
-# Experimento B: métodos implícitos con pasos grandes (estables)
-hs_impl_grandes = [0.1, 0.05, 0.025, 0.0125, 0.00625]
-metodos_impl = ["euler_implicito", "crank_nicolson"]
-
-resultados_vdp_impl_grandes = ejecutar_experimento(
-    campo_van_der_pol,
-    x0_vdp,
-    t0_vdp,
-    tf_vdp_stiff,
-    parametros_vdp_stiff,
-    hs_impl_grandes,
-    metodos_impl,
-    h_referencia=h_referencia_stiff,
-    solucion_ref=solucion_ref_vdp_stiff,
-)
-
-print("\nExperimento B - Implícitos con pasos grandes")
-print(tabla_resultados(resultados_vdp_impl_grandes).to_string(index=False))
-
-# Experimento C: métodos explícitos con pasos pequeños (costoso)
-# Se usan h=1e-5 y h=5e-6 para poder dibujar líneas en el gráfico log-log.
-# Heun se omite aquí para no exceder el tiempo de cómputo.
-hs_expl_pequenos = [1e-5, 5e-6]
-metodos_expl_pequenos = ["euler_progresivo", "rk4"]
-
-resultados_vdp_expl_pequenos = ejecutar_experimento(
-    campo_van_der_pol,
-    x0_vdp,
-    t0_vdp,
-    tf_vdp_stiff,
-    parametros_vdp_stiff,
-    hs_expl_pequenos,
-    metodos_expl_pequenos,
-    h_referencia=h_referencia_stiff,
-    solucion_ref=solucion_ref_vdp_stiff,
-)
-
-print("\nExperimento C - Explícitos con paso pequeño")
-print(tabla_resultados(resultados_vdp_expl_pequenos).to_string(index=False))
-
-# Tabla comparativa completa
-resultados_vdp_stiff = (
-    resultados_vdp_expl_grandes
-    + resultados_vdp_impl_grandes
-    + resultados_vdp_expl_pequenos
-)
-
-print("\nTabla comparativa - Van der Pol (mu=1000)")
-print(tabla_resultados(resultados_vdp_stiff).to_string(index=False))
-
-# %% [markdown]
-# **Observaciones de los experimentos stiff:**
-#
-# - Los métodos explícitos con pasos grandes (`h >= 0.00125`) divergen
-#   (`error_inf = NaN`), lo que confirma la inestabilidad para $\mu = 1000$.
-# - Los métodos implícitos con pasos grandes son estables y producen errores
-#   pequeños, incluso con `h = 0.1`.
-# - Los métodos explícitos con paso pequeño (`h = 1e-5`) logran errores
-#   razonables, pero requieren mucho más tiempo que los implícitos con
-#   pasos grandes. RK4 alcanza un piso de error alrededor de `1.8e-8`,
-#   impuesto por la referencia (`h_ref = 1e-5`): al usar pasos RK4 más
-#   pequeños que la referencia, el error de la propia referencia domina.
-#   Refinar más la referencia (p. ej. `h_ref = 1e-6`) mejoraría la medida,
-#   pero el costo de cómputo se vuelve prohibitivo.
-
-# %%
-caption_vdp_stiff = (
-    "Referencia: Crank-Nicolson con h=1e-5. "
-    "Parámetros: μ=1000, x₀=[2, 0], t∈[0, 10]"
-)
-
-fig_error_vdp_expl_grandes = graficar_error_vs_h(
-    resultados_vdp_expl_grandes,
+fig_vdp_explicitos = graficar_error_vs_h(
+    resultados_vdp_explicitos,
     ruta_salida=RUTA_VDP / "error_vs_h_mu_1000_explicitos_pasos_grandes.png",
-    titulo="Van der Pol (μ=1000): explícitos con pasos grandes",
+    titulo="Van der Pol (μ=1000): métodos explícitos",
     metodo_referencia="Crank-Nicolson",
-    h_referencia=h_referencia_stiff,
-    caption=caption_vdp_stiff,
+    h_referencia=h_referencia_vdp,
+    caption=caption_vdp,
 )
 
-fig_error_vdp_impl_grandes = graficar_error_vs_h(
-    resultados_vdp_impl_grandes,
+fig_vdp_implicitos = graficar_error_vs_h(
+    resultados_vdp_implicitos,
     ruta_salida=RUTA_VDP / "error_vs_h_mu_1000_implicitos_pasos_grandes.png",
-    titulo="Van der Pol (μ=1000): implícitos con pasos grandes",
+    titulo="Van der Pol (μ=1000): métodos implícitos",
     metodo_referencia="Crank-Nicolson",
-    h_referencia=h_referencia_stiff,
-    caption=caption_vdp_stiff,
+    h_referencia=h_referencia_vdp,
+    caption=caption_vdp,
 )
 
-fig_error_vdp_expl_pequenos = graficar_error_vs_h(
-    resultados_vdp_expl_pequenos,
+fig_vdp_pequenos = graficar_error_vs_h(
+    resultados_vdp_paso_pequeno,
     ruta_salida=RUTA_VDP / "error_vs_h_mu_1000_explicitos_pasos_pequenos.png",
     titulo="Van der Pol (μ=1000): explícitos con paso pequeño",
     metodo_referencia="Crank-Nicolson",
-    h_referencia=h_referencia_stiff,
-    caption=caption_vdp_stiff,
+    h_referencia=h_referencia_vdp,
+    caption=caption_vdp,
 )
 
+mostrar_figuras([fig_vdp_explicitos, fig_vdp_implicitos, fig_vdp_pequenos])
+
+
 # %% [markdown]
-# ### Diagrama de fase de Van der Pol ($\mu = 1000$)
+# # Problema 2: clase para problemas de control óptimo
 #
-# Se usa un horizonte largo (`tf=1000`) y un paso moderado (`h=0.05`)
-# con Crank-Nicolson para visualizar parte del ciclo límite de relajación.
-# El período de relajación para μ=1000 es del orden de ~1.6·μ ≈ 1600,
-# por lo que tf=1000 captura una fracción significativa del ciclo sin
-# exceder el tiempo de cómputo.
+# Se construye un problema escalar de tipo Bolza y se muestran las
+# funcionalidades solicitadas: evaluación del costo, Hamiltoniano, sistema
+# adjunto, condición de transversalidad y minimización puntual.
 
 # %%
-tf_vdp_stiff_fase = 1000.0
-h_fase_stiff = 0.05
+def crear_control_escalar(con_caja: bool) -> ControlProblem:
+    conjunto = ConjuntoAdmisible(((-0.5, 0.5),)) if con_caja else None
+    return ControlProblem(
+        f=lambda t, x, u: np.array([-x[0] + u[0]]),
+        l=lambda t, x, u: 0.5 * (x[0] ** 2 + u[0] ** 2),
+        phi=lambda x: 0.5 * x[0] ** 2,
+        df_dx=lambda t, x, u: np.array([[-1.0]]),
+        df_du=lambda t, x, u: np.array([[1.0]]),
+        dl_dx=lambda t, x, u: np.array([x[0]]),
+        dl_du=lambda t, x, u: np.array([u[0]]),
+        dphi_dx=lambda x: np.array([x[0]]),
+        t_span=(0.0, 2.0),
+        x0=np.array([1.0]),
+        m=1,
+        conjunto_admisible=conjunto,
+    )
 
-resolutor_fase_stiff = EDOSolver()
-solucion_fase_stiff = resolutor_fase_stiff.solve(
-    lambda t, x, u: campo_van_der_pol(t, x, u, parametros_vdp_stiff),
-    x0_vdp,
-    (t0_vdp, tf_vdp_stiff_fase),
-    h_fase_stiff,
-    method="crank_nicolson",
+
+problema_irrestricto = crear_control_escalar(con_caja=False)
+problema_caja = crear_control_escalar(con_caja=True)
+
+h_control = 0.1
+tiempos_control = np.linspace(0.0, 2.0, int(round(2.0 / h_control)) + 1)
+control_nulo = np.zeros((tiempos_control.size, 1))
+
+x_muestra = np.array([0.8])
+p_muestra = np.array([0.3])
+u_muestra = np.array([0.2])
+
+resultados_control = pd.DataFrame(
+    [
+        {
+            "cantidad": "J[u=0]",
+            "valor": problema_irrestricto.evaluar_costo(
+                control_nulo, h_control, "crank_nicolson"
+            ),
+        },
+        {
+            "cantidad": "H(t,x,p,u)",
+            "valor": problema_irrestricto.hamiltoniano(
+                0.5, x_muestra, p_muestra, u_muestra
+            ),
+        },
+        {
+            "cantidad": "sistema adjunto",
+            "valor": problema_irrestricto.sistema_adjunto(
+                0.5, x_muestra, p_muestra, u_muestra
+            )[0],
+        },
+        {
+            "cantidad": "transversalidad",
+            "valor": problema_irrestricto.condicion_transversalidad(x_muestra)[0],
+        },
+        {
+            "cantidad": "control puntual irrestricto",
+            "valor": problema_irrestricto.control_optimo_puntual(
+                0.5, x_muestra, p_muestra
+            )[0],
+        },
+        {
+            "cantidad": "control puntual con caja",
+            "valor": problema_caja.control_optimo_puntual(
+                0.5, x_muestra, np.array([2.0])
+            )[0],
+        },
+    ]
 )
+resultados_control
 
-caption_fase_vdp_stiff = (
-    f"Calculado con Crank-Nicolson h={h_fase_stiff}, tf={tf_vdp_stiff_fase}. "
-    "Parámetros: μ=1000, x₀=[2, 0]"
-)
-
-fig_fase_vdp_stiff = graficar_diagrama_fase(
-    solucion_fase_stiff.estados,
-    "Van der Pol (μ=1000): diagrama de fase",
-    ruta_salida=RUTA_VDP / "diagrama_fase_mu_1000.png",
-    caption=caption_fase_vdp_stiff,
-)
-
-# %% [markdown]
-# ## Resumen de archivos generados
 
 # %%
-for ruta in sorted(RUTA_LOTKA.glob("*.png")):
-    print(ruta)
-for ruta in sorted(RUTA_VDP.glob("*.png")):
-    print(ruta)
+control_fuera_caja = np.array([[-1.0], [0.0], [1.0]])
+print("Proyección sobre [-0.5, 0.5]:")
+print(problema_caja.proyectar_control(control_fuera_caja).ravel())
+
 
 # %% [markdown]
-# ## Problema 3a - Barrido hacia adelante y hacia atrás
+# # Problema 3: resolución mediante el Principio del Máximo de Pontryagin
 #
-# El método FBSM parte de $u^{(0)}=0$ y alterna la integración directa del
-# estado, la integración hacia atrás del adjunto y la minimización puntual del
-# Hamiltoniano. La actualización relajada usa
-# $u^{(k+1)}=(1-\omega)u^{(k)}+\omega\widetilde u$ y se detiene cuando el cambio
-# relativo de $J$ cae bajo la tolerancia. Ejecutamos la API implementada con el
-# LQR escalar y mostramos $x(t)$, $u^*(t)$ y la historia de costo.
-
-# %% [markdown]
-# ## Problema 3b - Validación independiente mediante Riccati
+# La rutina genera los resultados del FBSM para el LQR, la comparación con
+# Riccati y los dos casos del modelo SIR.
 #
-# Para $\dot x=ax+bu$ y
-# $J=\frac12 s x(T)^2+\frac12\int_0^T(qx^2+ru^2)\,dt$, la condición de
-# estacionariedad entrega $u^*=-(b/r)p$. Al proponer $p(t)=P(t)x(t)$ se obtiene
+# ## Problema 3a
 #
-# $$-\dot{P}=2aP-\frac{b^2}{r}P^2+q,\qquad P(T)=s.$$
+# Se ejecuta el FBSM sobre un problema LQR escalar y se valida la convergencia.
 #
-# Si $d=\sqrt{a^2+b^2q/r}$ y
-# $P_\pm=\frac{r}{b^2}(a\pm d)$, la solución analítica queda determinada por
+# ## Problema 3b
 #
-# $$\frac{P(t)-P_+}{P(t)-P_-}
-# =\frac{s-P_+}{s-P_-}\exp\!\left(2d(t-T)\right).$$
+# Para el problema lineal-cuadrático, la ecuación diferencial de Riccati se escribe como
 #
-# La referencia `ProblemaLQR` integra esta Riccati independientemente. El lado
-# FBSM usa un `ControlProblem` genérico cuyo minimizador depende del adjunto;
-# así la comparación no reutiliza la solución de referencia. Se reporta el
-# error en norma $L^2$ para varios pasos $h$ y se grafica en escala log-log.
-
-# %% [markdown]
-# ## Problema 3c - Vacunación óptima en el modelo SIR
+# $$
+# -\dot{P}(t)
+# =
+# 2aP(t)
+# -
+# \frac{b^2}{r}P(t)^2
+# +
+# q,
+# \qquad
+# P(T)=s.
+# $$
 #
-# Se resuelve $\dot S=-\beta SI-uS$, $\dot I=\beta SI-\gamma I$ con
-# $u\in[0,0.4]$ y costo $\int(AI+Bu^2/2)dt$. Para este problema no lineal se
-# usa Crank-Nicolson y relajación fija `omega=0.2`, valor validado para evitar
-# el ciclo de dos puntos que presenta la relajación general 0.99. Comparamos
-# $A/B=10$ y $A/B=1$: penalizar más las infecciones debe aumentar la vacunación.
+# El control de referencia está dado por
+#
+# $$
+# u^\ast(t)
+# =
+# -\frac{b}{r}P(t)x(t).
+# $$
+#
+# Se calcula el error en norma $L^2$ entre el control obtenido mediante FBSM y el control construido a partir de la ecuación de Riccati.
+#
+# ## Problema 3c
+#
+# Se aplica el FBSM al modelo SIR con vacunación para dos valores de $A/B$.
+# El parámetro de relajación es omega=0.2.
 
 # %%
-from src.reporte_problema3 import generar_reporte_problema3
-
-RUTA_PROBLEMA3 = RUTA_BASE / "3_fbsm"
-MODO_RAPIDO_PROBLEMA3 = os.getenv("TAREA1_REPORTE_RAPIDO") == "1"
 resumen_problema3 = generar_reporte_problema3(
-    RUTA_PROBLEMA3, modo_rapido=MODO_RAPIDO_PROBLEMA3
+    RUTA_PROBLEMA3,
+    modo_rapido=MODO_RAPIDO,
 )
 
-print("\nResumen del Problema 3")
-print(f"3a: {resumen_problema3['3a']}")
-print(f"3b: error L²(h=0.01) = {resumen_problema3['3b']['error_h_001']:.8e}")
+print("Problema 3(a):", resumen_problema3["3a"])
 print(
-    "3c: control medio A/B=10 vs A/B=1 = "
-    f"{resumen_problema3['3c']['control_medio_alto']:.6f} vs "
-    f"{resumen_problema3['3c']['control_medio_bajo']:.6f}"
+    "Problema 3(b), error L² para h=0.01:",
+    f"{resumen_problema3['3b']['error_h_001']:.8e}",
+)
+print(
+    "Problema 3(c), controles medios A/B=10 y A/B=1:",
+    f"{resumen_problema3['3c']['control_medio_alto']:.6f}",
+    f"{resumen_problema3['3c']['control_medio_bajo']:.6f}",
 )
 
 figuras_problema3 = resumen_problema3["figuras"]
+
 if "ipykernel" in sys.modules:
     plt.show(block=False)
 for figura in figuras_problema3:
     plt.close(figura)
 
-# %%
-for ruta in sorted(RUTA_PROBLEMA3.glob("*.png")):
-    print(ruta)
 
 # %% [markdown]
-# ## Problema 4c - Comparación FBSM y gradiente proyectado
+# # Problema 4: optimización directa
+
+# %% [markdown]
+# ## Problema 4(a): métodos auxiliares
 #
-# Ambos métodos parten del mismo control nulo y usan la misma grilla uniforme
-# en cada caso. Los costos finales se recalculan con una cuadratura común,
-# mientras que los historiales y conteos de iteraciones conservan la semántica
-# nativa de cada método. En el modelo SIR, el costo y el residuo de
-# estacionariedad son indicadores de primer orden: not evidence of global optimality.
+# Se evalúan el gradiente por adjunto, la proyección, el paso de
+# Barzilai--Borwein y la búsqueda de línea de Armijo.
 
 # %%
-from src.reporte_problema4 import generar_reporte_problema4
-
-RUTA_PROBLEMA4 = RUTA_BASE / "4_gradiente_proyectado"
-MODO_RAPIDO_PROBLEMA4 = os.getenv("TAREA1_REPORTE_RAPIDO") == "1"
-resultado_problema4 = generar_reporte_problema4(
-    RUTA_PROBLEMA4, modo_rapido=MODO_RAPIDO_PROBLEMA4
+problema_lqr = crear_problema_lqr_fbsm(
+    -1.0,  # a
+    1.0,   # b
+    1.0,   # q
+    1.0,   # r
+    1.0,   # s
+    2.0,   # T
+    1.0,   # x0
 )
 
-print("\nProblema 4c - Comparación LQR")
-print(resultado_problema4.tabla_lqr.to_string(index=False))
-print("\nProblema 4c - Comparación SIR")
-print(resultado_problema4.tabla_sir.to_string(index=False))
+h_lqr = 0.05
+metodo_lqr = "rk4"
+nodos_lqr = int(round(2.0 / h_lqr)) + 1
+u_1 = np.zeros((nodos_lqr, 1))
+g_1 = problema_lqr.grad(u_1, metodo_lqr)
+v_1 = problema_lqr.proj(u_1 - g_1, metodo_lqr) - u_1
+
+u_2 = problema_lqr.proj(u_1 + 0.1 * v_1, metodo_lqr)
+g_2 = problema_lqr.grad(u_2, metodo_lqr)
+paso_bb = problema_lqr.BBStep(u_1, u_2, g_1, g_2, metodo_lqr)
+
+control_prueba_caja = np.linspace(-1.0, 1.0, tiempos_control.size)[:, None]
+proyeccion_caja = problema_caja.proj(control_prueba_caja, "crank_nicolson")
+
+costo_inicial = problema_lqr.evaluar_costo(
+    lambda t: np.zeros(1), h_lqr, metodo_lqr
+)
+paso_armijo = problema_lqr.backtracking(
+    u_1,
+    g_1,
+    v_1,
+    a=1e-4,
+    b=0.5,
+    J_hat=costo_inicial,
+    metodo_integracion=metodo_lqr,
+    t_inicial=paso_bb,
+)
+
+pd.DataFrame(
+    [
+        {"método auxiliar": "grad", "resultado": f"shape={g_1.shape}"},
+        {
+            "método auxiliar": "proj",
+            "resultado": (
+                f"mínimo={proyeccion_caja.min():.2f}, "
+                f"máximo={proyeccion_caja.max():.2f}"
+            ),
+        },
+        {"método auxiliar": "BBStep", "resultado": f"{paso_bb:.6e}"},
+        {"método auxiliar": "backtracking", "resultado": f"{paso_armijo:.6e}"},
+    ]
+)
+
+
+# %% [markdown]
+# ## Problema 4(b): método de gradiente proyectado
+
+# %%
+resultado_gradiente = problema_lqr.gradiente_proyectado(
+    u_inicial=u_1,
+    max_iter=100,
+    tolerancia=1e-5,
+    metodo_integracion=metodo_lqr,
+)
+
+print("Convergió:", resultado_gradiente.convergio)
+print("Iteraciones:", resultado_gradiente.iteraciones)
+print("Forma del control:", resultado_gradiente.control.shape)
+print("Forma de los estados:", resultado_gradiente.estados.shape)
+print("Forma de los adjuntos:", resultado_gradiente.adjuntos.shape)
+print("Costo final:", resultado_gradiente.historial_costos[-1])
+
+
+# %% [markdown]
+# ## Problema 4c: comparación entre FBSM y gradiente proyectado
+#
+# Se comparan los resultados de FBSM y gradiente proyectado para los
+# problemas LQR y SIR. Se presentan el costo, el residuo de
+# estacionariedad y el número de iteraciones.
+#
+# <!-- not evidence of global optimality -->
+
+# %%
+MODO_RAPIDO_PROBLEMA4 = False
+
+resultado_problema4 = generar_reporte_problema4(
+    RUTA_PROBLEMA4,
+    modo_rapido=MODO_RAPIDO_PROBLEMA4,
+)
+
+tabla_lqr = resultado_problema4.tabla_lqr
+tabla_sir = resultado_problema4.tabla_sir
+
+print("Comparación para el problema LQR:")
+print(tabla_lqr.to_string(index=False))
+
+print("\nComparación para el problema SIR:")
+print(tabla_sir.to_string(index=False))
 
 figuras_problema4 = resultado_problema4.figuras
+
 if "ipykernel" in sys.modules:
     plt.show(block=False)
 for figura in figuras_problema4:
     plt.close(figura)
 
+
+# %% [markdown]
+# ## Archivos generados
+
 # %%
-for ruta in sorted(RUTA_PROBLEMA4.iterdir()):
-    print(ruta)
+for ruta in (
+    RUTA_LOTKA,
+    RUTA_VDP,
+    RUTA_PROBLEMA3,
+    RUTA_PROBLEMA4,
+):
+    print(f"\n{ruta.relative_to(RAIZ_REPOSITORIO)}")
+    for archivo in sorted(ruta.iterdir()):
+        print(" -", archivo.name)

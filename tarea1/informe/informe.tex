@@ -63,13 +63,6 @@ La clase \texttt{EDOSolver} expone una interfaz única que recibe el campo, la c
 
 Los métodos explícitos evalúan directamente las pendientes requeridas por cada esquema. Euler implícito y Crank--Nicolson construyen, en cada paso, el residual no lineal correspondiente y lo resuelven mediante \texttt{scipy.optimize.fsolve}. La misma estructura admite dimensión de estado arbitraria, pasos efectivos ajustados a los extremos del intervalo y control opcional.
 
-\subsection{Metodología de validación}
-
-La verificación de orden usa el problema escalar $\dot{x}=-x$, cuya solución exacta es $e^{-t}$, y compara el cociente de errores al reducir el paso a la mitad. Las pruebas comprueban los órdenes esperados para Euler progresivo, Heun, Crank--Nicolson y RK4. Para los sistemas sin solución cerrada utilizada en los experimentos, el error se define por
-\begin{equation}
-    E_{\infty}=\max_{k,i}\left|x_{k,i}-x^{\mathrm{ref}}_i(t_k)\right|,
-\end{equation}
-donde la referencia se interpola cúbicamente sobre la grilla de la aproximación. Por tanto, este valor mide discrepancia respecto de una \emph{referencia numérica}; no es un error frente a una solución exacta y hereda la discretización e interpolación de dicha referencia.
 
 \subsection{Sistema de Lotka--Volterra}
 
